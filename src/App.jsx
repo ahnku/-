@@ -14,6 +14,8 @@ import {
   Download,
   Upload,
   X,
+  Phone,
+  User,
 } from "lucide-react";
 
 function todayKey() {
@@ -461,6 +463,12 @@ function MemoPanel({ focusMemoId, onFocusHandled }) {
   const resizingRef = useRef({ id: null, startY: 0, startHeight: 0 });
   const [lastDeleted, setLastDeleted] = useState(null);
   const undoTimerRef = useRef(null);
+  const [collapsed, setCollapsed] = useState({});
+
+  const isCollapsed = (id) => Boolean(collapsed[id]);
+  const toggleCollapse = (id) => {
+    setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
   const DEFAULT_MEMO_HEIGHT = 160;
   const MIN_MEMO_HEIGHT = 80;
@@ -530,9 +538,10 @@ function MemoPanel({ focusMemoId, onFocusHandled }) {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
   };
 
-  // 검색 결과 클릭으로 특정 메모에 포커스하라는 요청이 오면 스크롤+포커스한다
+  // 검색 결과 클릭으로 특정 메모에 포커스하라는 요청이 오면 펼치고 스크롤+포커스한다
   useEffect(() => {
     if (!focusMemoId) return;
+    setCollapsed((prev) => ({ ...prev, [focusMemoId]: false }));
     setTimeout(() => {
       memoRefs.current[focusMemoId]?.scrollIntoView({ behavior: "smooth", block: "center" });
       memoRefs.current[focusMemoId]?.focus();
@@ -554,51 +563,73 @@ function MemoPanel({ focusMemoId, onFocusHandled }) {
         </button>
       </div>
 
-      <div className="space-y-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 items-start">
         {sortedMemos.length === 0 && (
           <div className="text-center py-16 text-sm text-slate-400 dark:text-slate-500">
             아직 메모가 없어요. 위 버튼으로 새 메모를 시작해보세요.
           </div>
         )}
 
-        {sortedMemos.map((memo) => (
+        {sortedMemos.map((memo) => {
+          const collapsedNow = isCollapsed(memo.id);
+          return (
           <div
             key={memo.id}
             className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden px-4 py-3"
           >
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">
-                {new Date(memo.updatedAt).toLocaleString("ko-KR", {
-                  month: "long",
-                  day: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
+              <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono truncate">
+                {collapsedNow && memo.text
+                  ? memo.text.slice(0, 24)
+                  : new Date(memo.updatedAt).toLocaleString("ko-KR", {
+                      month: "long",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
               </span>
-              <button
-                onClick={() => deleteMemo(memo.id)}
-                className="text-slate-300 dark:text-slate-600 hover:text-red-500 p-1"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => deleteMemo(memo.id)}
+                  className="text-slate-300 dark:text-slate-600 hover:text-red-500 p-1"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => toggleCollapse(memo.id)}
+                  className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 p-1"
+                  title={collapsedNow ? "펼치기" : "숨기기"}
+                >
+                  {collapsedNow ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronUp className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
-            <textarea
-              ref={(el) => (memoRefs.current[memo.id] = el)}
-              value={memo.text}
-              onChange={(e) => updateMemo(memo.id, e.target.value)}
-              placeholder="자유롭게 메모를 적어보세요."
-              style={{ height: `${getHeight(memo)}px` }}
-              className="w-full text-sm text-slate-700 dark:text-slate-300 outline-none resize-none leading-relaxed"
-            />
-            <div
-              onMouseDown={handleHeightDragStart(memo.id, getHeight(memo))}
-              className="flex items-center justify-center h-3 cursor-row-resize group -mb-1"
-              title="드래그해서 높이 조절"
-            >
-              <div className="w-10 h-1 rounded-full bg-slate-100 dark:bg-slate-700 group-hover:bg-slate-300 transition-colors" />
-            </div>
+            {!collapsedNow && (
+              <>
+                <textarea
+                  ref={(el) => (memoRefs.current[memo.id] = el)}
+                  value={memo.text}
+                  onChange={(e) => updateMemo(memo.id, e.target.value)}
+                  placeholder="자유롭게 메모를 적어보세요."
+                  style={{ height: `${getHeight(memo)}px` }}
+                  className="w-full text-sm text-slate-700 dark:text-slate-300 outline-none resize-none leading-relaxed"
+                />
+                <div
+                  onMouseDown={handleHeightDragStart(memo.id, getHeight(memo))}
+                  className="flex items-center justify-center h-3 cursor-row-resize group -mb-1"
+                  title="드래그해서 높이 조절"
+                >
+                  <div className="w-10 h-1 rounded-full bg-slate-100 dark:bg-slate-700 group-hover:bg-slate-300 transition-colors" />
+                </div>
+              </>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {lastDeleted && (
@@ -945,9 +976,12 @@ const BACKUP_KEYS = [
   "work-journal-calendar-notes",
   "work-journal-calendar-note-heights",
   "work-journal-favorites",
+  "work-journal-contacts",
   "work-journal-tab-order",
   "work-journal-width",
   "work-journal-dark-mode",
+  "work-journal-font-scale",
+  "work-journal-entry-font-size",
 ];
 
 function readLocalArray(key) {
@@ -959,11 +993,222 @@ function readLocalArray(key) {
   }
 }
 
+function PhonebookPanel() {
+  const [contacts, setContacts] = usePersistedState("work-journal-contacts", []);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [category, setCategory] = useState("");
+  const [filter, setFilter] = useState("");
+  const [lastDeleted, setLastDeleted] = useState(null);
+  const undoTimerRef = useRef(null);
+
+  const existingCategories = useMemo(() => {
+    const set = new Set(contacts.map((c) => c.category || "기타"));
+    return Array.from(set);
+  }, [contacts]);
+
+  const addContact = () => {
+    const trimmedName = name.trim();
+    const trimmedPhone = phone.trim();
+    if (!trimmedName) return;
+    setContacts((prev) => [
+      ...prev,
+      {
+        id: Date.now(),
+        name: trimmedName,
+        phone: trimmedPhone,
+        category: category.trim() || "기타",
+      },
+    ]);
+    setName("");
+    setPhone("");
+    setCategory("");
+  };
+
+  const deleteContact = (id) => {
+    const contact = contacts.find((c) => c.id === id);
+    setContacts((prev) => prev.filter((c) => c.id !== id));
+    if (contact) {
+      setLastDeleted(contact);
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = setTimeout(() => setLastDeleted(null), 6000);
+    }
+  };
+
+  const handleUndo = () => {
+    if (!lastDeleted) return;
+    setContacts((prev) => [...prev, lastDeleted]);
+    setLastDeleted(null);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+  };
+
+  const filteredContacts = contacts.filter((c) => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      c.name.toLowerCase().includes(q) ||
+      (c.phone || "").toLowerCase().includes(q) ||
+      (c.category || "").toLowerCase().includes(q)
+    );
+  });
+
+  const grouped = useMemo(() => {
+    const map = {};
+    filteredContacts.forEach((c) => {
+      const key = c.category || "기타";
+      if (!map[key]) map[key] = [];
+      map[key].push(c);
+    });
+    Object.values(map).forEach((list) =>
+      list.sort((a, b) => a.name.localeCompare(b.name, "ko"))
+    );
+    return Object.keys(map)
+      .sort((a, b) => a.localeCompare(b, "ko"))
+      .map((key) => ({ category: key, list: map[key] }));
+  }, [filteredContacts]);
+
+  return (
+    <div>
+      <p className="text-sm text-slate-400 dark:text-slate-500 mt-5 mb-4">
+        연락처를 카테고리별로 정리해두고 한눈에 찾아보세요.
+      </p>
+
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 mb-4 flex flex-col sm:flex-row gap-2">
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addContact()}
+          placeholder="이름"
+          className="flex-1 text-sm outline-none border border-slate-100 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-3 py-2"
+        />
+        <input
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addContact()}
+          placeholder="전화번호"
+          className="flex-1 text-sm outline-none border border-slate-100 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-3 py-2"
+        />
+        <input
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addContact()}
+          placeholder="카테고리 (예: 회사)"
+          list="phonebook-categories"
+          className="flex-1 text-sm outline-none border border-slate-100 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-3 py-2"
+        />
+        <datalist id="phonebook-categories">
+          {existingCategories.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+        <button
+          onClick={addContact}
+          className="flex items-center justify-center gap-1.5 bg-slate-900 text-white text-sm font-medium px-3.5 py-2 rounded-lg hover:bg-slate-700 dark:hover:bg-slate-600 transition-colors shrink-0"
+        >
+          <Plus className="h-4 w-4" />
+          추가
+        </button>
+      </div>
+
+      {contacts.length > 0 && (
+        <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 mb-5">
+          <Search className="h-4 w-4 text-slate-400 dark:text-slate-500 shrink-0" />
+          <input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="이름, 번호, 카테고리로 찾기"
+            className="flex-1 text-sm outline-none bg-transparent text-slate-700 dark:text-slate-200"
+          />
+        </div>
+      )}
+
+      {contacts.length === 0 ? (
+        <div className="text-center py-16 text-sm text-slate-400 dark:text-slate-500">
+          아직 등록된 연락처가 없어요. 위에서 추가해보세요.
+        </div>
+      ) : grouped.length === 0 ? (
+        <div className="text-center py-16 text-sm text-slate-400 dark:text-slate-500">
+          검색 결과가 없어요.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {grouped.map(({ category: cat, list }) => (
+            <div key={cat}>
+              <div className="flex items-center gap-2 mb-1.5 px-1">
+                <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                  {cat}
+                </span>
+                <span className="text-[11px] text-slate-300 dark:text-slate-600">
+                  {list.length}
+                </span>
+              </div>
+              <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                {list.map((c, idx) => (
+                  <div
+                    key={c.id}
+                    className={`group flex items-center justify-between px-4 py-2.5 ${
+                      idx !== 0 ? "border-t border-slate-100 dark:border-slate-700" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center shrink-0">
+                        <User className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
+                          {c.name}
+                        </div>
+                        <div className="text-xs text-slate-400 dark:text-slate-500 font-mono truncate">
+                          {c.phone || "번호 없음"}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {c.phone && (
+                        <a
+                          href={`tel:${c.phone}`}
+                          className="text-slate-300 dark:text-slate-600 hover:text-indigo-500 dark:hover:text-indigo-400 p-1.5"
+                          title="전화 걸기"
+                        >
+                          <Phone className="h-4 w-4" />
+                        </a>
+                      )}
+                      <button
+                        onClick={() => deleteContact(c.id)}
+                        className="text-slate-300 dark:text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1.5"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {lastDeleted && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-3 z-50">
+          <span>연락처를 삭제했어요</span>
+          <button
+            onClick={handleUndo}
+            className="font-semibold text-indigo-300 hover:text-indigo-200"
+          >
+            실행취소
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const DEFAULT_TABS = [
   { id: "journal", label: "업무일지" },
   { id: "memo", label: "메모장" },
   { id: "calendar", label: "캘린더" },
   { id: "favorites", label: "즐겨찾기" },
+  { id: "phonebook", label: "전화번호부" },
 ];
 
 const MIN_WIDTH = 1040; // 기본 폭 (오늘업무/내일업무 칸이 더 넓게 보이도록 확장)
@@ -1056,6 +1301,16 @@ export default function WorkJournalApp() {
     reader.readAsText(file);
     e.target.value = "";
   };
+
+  // 예전에 저장해둔 탭 순서에 새로 추가된 기본 탭(예: 전화번호부)이 없으면 자동으로 끼워 넣는다
+  useEffect(() => {
+    setTabs((prev) => {
+      const missing = DEFAULT_TABS.filter((dt) => !prev.some((t) => t.id === dt.id));
+      if (missing.length === 0) return prev;
+      return [...prev, ...missing];
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 예전에 더 좁은 폭으로 저장해둔 경우, 새 최소/최대 범위에 맞게 자동 보정
   useEffect(() => {
@@ -1240,6 +1495,7 @@ export default function WorkJournalApp() {
           )}
           {activeTab === "calendar" && <CalendarPanel />}
           {activeTab === "favorites" && <FavoritesPanel />}
+          {activeTab === "phonebook" && <PhonebookPanel />}
           </div>
 
           <div

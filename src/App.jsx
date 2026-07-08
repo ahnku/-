@@ -180,6 +180,7 @@ function TabButton({ active, onClick, children }) {
 
 function JournalPanel({ focusDate, onFocusHandled }) {
   const [entries, setEntries] = usePersistedState("work-journal-entries", []);
+  const [entryFontSize, setEntryFontSize] = usePersistedState("work-journal-entry-font-size", 14);
   const [overrides, setOverrides] = useState({});
   const [lookupDate, setLookupDate] = useState(todayKey());
   const entryRefs = useRef({});
@@ -228,7 +229,7 @@ function JournalPanel({ focusDate, onFocusHandled }) {
 
   const isExpanded = (date) => {
     if (date in overrides) return overrides[date];
-    return daysAgo(date) < 2; // 오늘, 어제는 기본 펼침 / 2일 전부터는 기본 숨김
+    return daysAgo(date) === 0; // 오늘만 기본 펼침, 그 외에는 모두 기본 접힘
   };
 
   const toggleExpand = (date) => {
@@ -296,15 +297,33 @@ function JournalPanel({ focusDate, onFocusHandled }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4 mt-5">
+      <div className="flex items-center gap-2 flex-wrap justify-between mb-4 mt-5">
         <p className="text-sm text-slate-400 dark:text-slate-500">날짜별로 오늘업무와 내일업무를 기록해요.</p>
-        <button
-          onClick={createNewTodayPage}
-          className="flex items-center gap-1.5 bg-slate-900 text-white text-sm font-medium px-3.5 py-2 rounded-lg hover:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          오늘 페이지 작성
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
+            <span>글자 크기</span>
+            <button
+              onClick={() => setEntryFontSize((v) => Math.max(11, v - 1))}
+              className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
+            >
+              −
+            </button>
+            <span className="w-5 text-center tabular-nums">{entryFontSize}</span>
+            <button
+              onClick={() => setEntryFontSize((v) => Math.min(24, v + 1))}
+              className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
+            >
+              +
+            </button>
+          </div>
+          <button
+            onClick={createNewTodayPage}
+            className="flex items-center gap-1.5 bg-slate-900 text-white text-sm font-medium px-3.5 py-2 rounded-lg hover:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            오늘 페이지 작성
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 mb-5">
@@ -332,7 +351,7 @@ function JournalPanel({ focusDate, onFocusHandled }) {
 
         {sortedEntries.map((entry) => {
           const expanded = isExpanded(entry.date);
-          const old = daysAgo(entry.date) >= 2;
+          const old = daysAgo(entry.date) >= 1;
           return (
             <div
               key={entry.date}
@@ -384,7 +403,7 @@ function JournalPanel({ focusDate, onFocusHandled }) {
                         value={entry.todayText}
                         onChange={(e) => updateText(entry.date, "todayText", e.target.value)}
                         placeholder="오늘 진행한(할) 업무를 적어보세요."
-                        style={{ height: `${getHeight(entry)}px` }}
+                        style={{ height: `${getHeight(entry)}px`, fontSize: `${entryFontSize}px` }}
                         className="w-full text-sm text-slate-700 dark:text-slate-300 outline-none resize-none border border-slate-100 dark:border-slate-700 rounded-lg p-3 focus:border-indigo-300 dark:focus:border-indigo-500 leading-relaxed"
                       />
                     </div>
@@ -397,7 +416,7 @@ function JournalPanel({ focusDate, onFocusHandled }) {
                         value={entry.tomorrowText}
                         onChange={(e) => updateText(entry.date, "tomorrowText", e.target.value)}
                         placeholder="내일 예정된 업무를 적어보세요."
-                        style={{ height: `${getHeight(entry)}px` }}
+                        style={{ height: `${getHeight(entry)}px`, fontSize: `${entryFontSize}px` }}
                         className="w-full text-sm text-slate-700 dark:text-slate-300 outline-none resize-none border border-slate-100 dark:border-slate-700 rounded-lg p-3 focus:border-amber-300 dark:focus:border-amber-500 leading-relaxed"
                       />
                     </div>
@@ -417,7 +436,7 @@ function JournalPanel({ focusDate, onFocusHandled }) {
       </div>
 
       <p className="mt-6 text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
-        작성한 내용은 이 브라우저에 자동 저장됩니다. 2일 이전 기록은 기본적으로 접혀 있으며,
+        작성한 내용은 이 브라우저에 자동 저장됩니다. 오늘 기록만 기본적으로 펼쳐져 있으며,
         날짜 제목을 클릭하면 펼치거나 접을 수 있어요.
       </p>
 
@@ -954,6 +973,7 @@ export default function WorkJournalApp() {
   const [tabs, setTabs] = usePersistedState("work-journal-tab-order", DEFAULT_TABS);
   const [width, setWidth] = usePersistedState("work-journal-width", MIN_WIDTH);
   const [darkMode, setDarkMode] = usePersistedState("work-journal-dark-mode", false);
+  const [fontScale, setFontScale] = usePersistedState("work-journal-font-scale", 100);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1042,6 +1062,14 @@ export default function WorkJournalApp() {
     if (width < MIN_WIDTH) setWidth(MIN_WIDTH);
     else if (width > MAX_WIDTH) setWidth(MAX_WIDTH);
   }, [width, setWidth]);
+
+  // 글자 크기: rem 단위를 쓰는 모든 텍스트가 함께 커지도록 문서 루트 font-size를 조절한다
+  useEffect(() => {
+    document.documentElement.style.fontSize = `${fontScale}%`;
+    return () => {
+      document.documentElement.style.fontSize = "";
+    };
+  }, [fontScale]);
   const [activeTab, setActiveTab] = useState("journal");
   const dragIndexRef = useRef(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
@@ -1126,6 +1154,27 @@ export default function WorkJournalApp() {
                   </button>
                   {settingsOpen && (
                     <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg py-1 z-50">
+                      <div className="flex items-center justify-between px-3 py-2 text-sm text-slate-700 dark:text-slate-200">
+                        <span>글자 크기</span>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setFontScale((v) => Math.max(80, v - 10))}
+                            className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+                          >
+                            −
+                          </button>
+                          <span className="w-9 text-center text-xs text-slate-400 tabular-nums">
+                            {fontScale}%
+                          </span>
+                          <button
+                            onClick={() => setFontScale((v) => Math.min(150, v + 10))}
+                            className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                      <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
                       <button
                         onClick={() => setDarkMode((v) => !v)}
                         className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"

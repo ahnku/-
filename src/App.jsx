@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Plus,
   ChevronDown,
@@ -8,6 +8,12 @@ import {
   Trash2,
   Search,
   GripVertical,
+  Settings,
+  Sun,
+  Moon,
+  Download,
+  Upload,
+  X,
 } from "lucide-react";
 
 function todayKey() {
@@ -162,21 +168,61 @@ function TabButton({ active, onClick, children }) {
       onClick={onClick}
       className={`flex items-center gap-1 px-3 py-2.5 text-sm font-semibold border-b-2 whitespace-nowrap transition-colors ${
         active
-          ? "border-slate-900 text-slate-900"
-          : "border-transparent text-slate-400 hover:text-slate-600"
+          ? "border-slate-900 text-slate-900 dark:text-slate-100"
+          : "border-transparent text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
       }`}
     >
-      <GripVertical className="h-3.5 w-3.5 text-slate-300 cursor-grab" />
+      <GripVertical className="h-3.5 w-3.5 text-slate-300 dark:text-slate-600 cursor-grab" />
       {children}
     </button>
   );
 }
 
-function JournalPanel() {
+function JournalPanel({ focusDate, onFocusHandled }) {
   const [entries, setEntries] = usePersistedState("work-journal-entries", []);
   const [overrides, setOverrides] = useState({});
   const [lookupDate, setLookupDate] = useState(todayKey());
   const entryRefs = useRef({});
+  const resizingRef = useRef({ date: null, startY: 0, startHeight: 0 });
+  const [lastDeleted, setLastDeleted] = useState(null);
+  const undoTimerRef = useRef(null);
+
+  const DEFAULT_BOX_HEIGHT = 200;
+  const MIN_BOX_HEIGHT = 100;
+  const MAX_BOX_HEIGHT = 600;
+
+  const getHeight = (entry) => entry.boxHeight || DEFAULT_BOX_HEIGHT;
+
+  const updateHeight = (date, height) => {
+    setEntries((prev) => prev.map((e) => (e.date === date ? { ...e, boxHeight: height } : e)));
+  };
+
+  const handleHeightDragStart = (date, currentHeight) => (e) => {
+    resizingRef.current = { date, startY: e.clientY, startHeight: currentHeight };
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      const { date, startY, startHeight } = resizingRef.current;
+      if (!date) return;
+      const delta = e.clientY - startY;
+      const next = Math.min(MAX_BOX_HEIGHT, Math.max(MIN_BOX_HEIGHT, startHeight + delta));
+      updateHeight(date, next);
+    };
+    const handleMouseUp = () => {
+      resizingRef.current.date = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
 
   const sortedEntries = [...entries].sort((a, b) => b.date.localeCompare(a.date));
 
@@ -194,8 +240,36 @@ function JournalPanel() {
   };
 
   const deleteEntry = (date) => {
+    const entry = entries.find((e) => e.date === date);
     setEntries((prev) => prev.filter((e) => e.date !== date));
+    if (entry) {
+      setLastDeleted(entry);
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = setTimeout(() => setLastDeleted(null), 6000);
+    }
   };
+
+  const handleUndo = () => {
+    if (!lastDeleted) return;
+    setEntries((prev) => [...prev, lastDeleted]);
+    setLastDeleted(null);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+  };
+
+  // 검색 결과 클릭 등으로 특정 날짜에 포커스하라는 요청이 오면 펼치고 스크롤한다
+  useEffect(() => {
+    if (!focusDate) return;
+    setEntries((prev) => {
+      if (prev.some((e) => e.date === focusDate)) return prev;
+      return [...prev, { date: focusDate, todayText: "", tomorrowText: "" }];
+    });
+    setOverrides((prev) => ({ ...prev, [focusDate]: true }));
+    setTimeout(() => {
+      entryRefs.current[focusDate]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+    onFocusHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusDate]);
 
   const createNewTodayPage = () => {
     const key = todayKey();
@@ -223,27 +297,27 @@ function JournalPanel() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4 mt-5">
-        <p className="text-sm text-slate-400">날짜별로 오늘업무와 내일업무를 기록해요.</p>
+        <p className="text-sm text-slate-400 dark:text-slate-500">날짜별로 오늘업무와 내일업무를 기록해요.</p>
         <button
           onClick={createNewTodayPage}
-          className="flex items-center gap-1.5 bg-slate-900 text-white text-sm font-medium px-3.5 py-2 rounded-lg hover:bg-slate-700 transition-colors"
+          className="flex items-center gap-1.5 bg-slate-900 text-white text-sm font-medium px-3.5 py-2 rounded-lg hover:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
         >
           <Plus className="h-4 w-4" />
           오늘 페이지 작성
         </button>
       </div>
 
-      <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 mb-5">
-        <Search className="h-4 w-4 text-slate-400 shrink-0" />
+      <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 mb-5">
+        <Search className="h-4 w-4 text-slate-400 dark:text-slate-500 shrink-0" />
         <input
           type="date"
           value={lookupDate}
           onChange={(e) => setLookupDate(e.target.value)}
-          className="flex-1 text-sm outline-none text-slate-700"
+          className="flex-1 text-sm outline-none text-slate-700 dark:text-slate-300"
         />
         <button
           onClick={handleLookup}
-          className="text-sm font-medium text-slate-600 hover:text-slate-900 px-2"
+          className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 px-2"
         >
           조회
         </button>
@@ -251,7 +325,7 @@ function JournalPanel() {
 
       <div className="space-y-3">
         {sortedEntries.length === 0 && (
-          <div className="text-center py-16 text-sm text-slate-400">
+          <div className="text-center py-16 text-sm text-slate-400 dark:text-slate-500">
             아직 작성된 업무일지가 없어요. 위 버튼으로 오늘 페이지를 시작해보세요.
           </div>
         )}
@@ -262,18 +336,18 @@ function JournalPanel() {
           return (
             <div
               key={entry.date}
-              className="bg-white rounded-xl border border-slate-200 overflow-hidden"
+              className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden"
             >
               <div className="flex items-center justify-between px-4 py-3">
                 <button
                   onClick={() => toggleExpand(entry.date)}
                   className="flex items-center gap-2 text-left flex-1"
                 >
-                  <span className="text-sm font-semibold text-slate-800">
+                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
                     {formatDateLabel(entry.date)}
                   </span>
                   {old && (
-                    <span className="text-[11px] text-slate-400 font-mono">
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">
                       {daysAgo(entry.date)}일 전
                     </span>
                   )}
@@ -281,13 +355,13 @@ function JournalPanel() {
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => deleteEntry(entry.date)}
-                    className="text-slate-300 hover:text-red-500 p-1"
+                    className="text-slate-300 dark:text-slate-600 hover:text-red-500 p-1"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
                   <button
                     onClick={() => toggleExpand(entry.date)}
-                    className="text-slate-400 hover:text-slate-700 p-1"
+                    className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 p-1"
                   >
                     {expanded ? (
                       <ChevronUp className="h-4 w-4" />
@@ -299,35 +373,41 @@ function JournalPanel() {
               </div>
 
               {expanded && (
-                <div
-                  ref={(el) => (entryRefs.current[entry.date] = el)}
-                  className="px-4 pb-4 grid grid-cols-1 sm:grid-cols-2 gap-3"
-                >
-                  <div>
-                    <div className="flex items-center gap-1.5 mb-1.5 px-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" />
-                      <span className="text-xs font-semibold text-slate-500">오늘업무</span>
+                <div ref={(el) => (entryRefs.current[entry.date] = el)} className="px-4 pb-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1.5 px-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" />
+                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">오늘업무</span>
+                      </div>
+                      <textarea
+                        value={entry.todayText}
+                        onChange={(e) => updateText(entry.date, "todayText", e.target.value)}
+                        placeholder="오늘 진행한(할) 업무를 적어보세요."
+                        style={{ height: `${getHeight(entry)}px` }}
+                        className="w-full text-sm text-slate-700 dark:text-slate-300 outline-none resize-none border border-slate-100 dark:border-slate-700 rounded-lg p-3 focus:border-indigo-300 dark:focus:border-indigo-500 leading-relaxed"
+                      />
                     </div>
-                    <textarea
-                      value={entry.todayText}
-                      onChange={(e) => updateText(entry.date, "todayText", e.target.value)}
-                      placeholder="오늘 진행한(할) 업무를 적어보세요."
-                      rows={8}
-                      className="w-full text-sm text-slate-700 outline-none resize-none border border-slate-100 rounded-lg p-3 focus:border-indigo-300 leading-relaxed"
-                    />
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1.5 px-1">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">내일업무</span>
+                      </div>
+                      <textarea
+                        value={entry.tomorrowText}
+                        onChange={(e) => updateText(entry.date, "tomorrowText", e.target.value)}
+                        placeholder="내일 예정된 업무를 적어보세요."
+                        style={{ height: `${getHeight(entry)}px` }}
+                        className="w-full text-sm text-slate-700 dark:text-slate-300 outline-none resize-none border border-slate-100 dark:border-slate-700 rounded-lg p-3 focus:border-amber-300 dark:focus:border-amber-500 leading-relaxed"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <div className="flex items-center gap-1.5 mb-1.5 px-1">
-                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                      <span className="text-xs font-semibold text-slate-500">내일업무</span>
-                    </div>
-                    <textarea
-                      value={entry.tomorrowText}
-                      onChange={(e) => updateText(entry.date, "tomorrowText", e.target.value)}
-                      placeholder="내일 예정된 업무를 적어보세요."
-                      rows={8}
-                      className="w-full text-sm text-slate-700 outline-none resize-none border border-slate-100 rounded-lg p-3 focus:border-amber-300 leading-relaxed"
-                    />
+                  <div
+                    onMouseDown={handleHeightDragStart(entry.date, getHeight(entry))}
+                    className="flex items-center justify-center h-3 cursor-row-resize group"
+                    title="드래그해서 두 칸 높이를 함께 조절"
+                  >
+                    <div className="w-10 h-1 rounded-full bg-slate-200 group-hover:bg-slate-400 transition-colors" />
                   </div>
                 </div>
               )}
@@ -336,23 +416,75 @@ function JournalPanel() {
         })}
       </div>
 
-      <p className="mt-6 text-xs text-slate-400 leading-relaxed">
+      <p className="mt-6 text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
         작성한 내용은 이 브라우저에 자동 저장됩니다. 2일 이전 기록은 기본적으로 접혀 있으며,
         날짜 제목을 클릭하면 펼치거나 접을 수 있어요.
       </p>
+
+      {lastDeleted && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-3 z-50">
+          <span>업무일지를 삭제했어요</span>
+          <button
+            onClick={handleUndo}
+            className="font-semibold text-indigo-300 hover:text-indigo-200"
+          >
+            실행취소
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-function MemoPanel() {
+function MemoPanel({ focusMemoId, onFocusHandled }) {
   const [memos, setMemos] = usePersistedState("work-journal-memos", []);
   const memoRefs = useRef({});
+  const resizingRef = useRef({ id: null, startY: 0, startHeight: 0 });
+  const [lastDeleted, setLastDeleted] = useState(null);
+  const undoTimerRef = useRef(null);
+
+  const DEFAULT_MEMO_HEIGHT = 160;
+  const MIN_MEMO_HEIGHT = 80;
+  const MAX_MEMO_HEIGHT = 600;
 
   const sortedMemos = [...memos].sort((a, b) => b.updatedAt - a.updatedAt);
 
+  const getHeight = (memo) => memo.boxHeight || DEFAULT_MEMO_HEIGHT;
+
+  const updateHeight = (id, height) => {
+    setMemos((prev) => prev.map((m) => (m.id === id ? { ...m, boxHeight: height } : m)));
+  };
+
+  const handleHeightDragStart = (id, currentHeight) => (e) => {
+    resizingRef.current = { id, startY: e.clientY, startHeight: currentHeight };
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      const { id, startY, startHeight } = resizingRef.current;
+      if (!id) return;
+      const delta = e.clientY - startY;
+      const next = Math.min(MAX_MEMO_HEIGHT, Math.max(MIN_MEMO_HEIGHT, startHeight + delta));
+      updateHeight(id, next);
+    };
+    const handleMouseUp = () => {
+      resizingRef.current.id = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
   const addMemo = () => {
     const id = Date.now();
-    setMemos((prev) => [{ id, text: "", updatedAt: id }, ...prev]);
+    setMemos((prev) => [{ id, text: "", updatedAt: id, boxHeight: DEFAULT_MEMO_HEIGHT }, ...prev]);
     setTimeout(() => memoRefs.current[id]?.focus(), 50);
   };
 
@@ -363,16 +495,40 @@ function MemoPanel() {
   };
 
   const deleteMemo = (id) => {
+    const memo = memos.find((m) => m.id === id);
     setMemos((prev) => prev.filter((m) => m.id !== id));
+    if (memo) {
+      setLastDeleted(memo);
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = setTimeout(() => setLastDeleted(null), 6000);
+    }
   };
+
+  const handleUndo = () => {
+    if (!lastDeleted) return;
+    setMemos((prev) => [lastDeleted, ...prev]);
+    setLastDeleted(null);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+  };
+
+  // 검색 결과 클릭으로 특정 메모에 포커스하라는 요청이 오면 스크롤+포커스한다
+  useEffect(() => {
+    if (!focusMemoId) return;
+    setTimeout(() => {
+      memoRefs.current[focusMemoId]?.scrollIntoView({ behavior: "smooth", block: "center" });
+      memoRefs.current[focusMemoId]?.focus();
+    }, 100);
+    onFocusHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusMemoId]);
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4 mt-5">
-        <p className="text-sm text-slate-400">날짜와 상관없이 자유롭게 적는 메모예요.</p>
+        <p className="text-sm text-slate-400 dark:text-slate-500">날짜와 상관없이 자유롭게 적는 메모예요.</p>
         <button
           onClick={addMemo}
-          className="flex items-center gap-1.5 bg-slate-900 text-white text-sm font-medium px-3.5 py-2 rounded-lg hover:bg-slate-700 transition-colors"
+          className="flex items-center gap-1.5 bg-slate-900 text-white text-sm font-medium px-3.5 py-2 rounded-lg hover:bg-slate-700 dark:hover:bg-slate-600 transition-colors"
         >
           <Plus className="h-4 w-4" />
           새 메모
@@ -381,7 +537,7 @@ function MemoPanel() {
 
       <div className="space-y-3">
         {sortedMemos.length === 0 && (
-          <div className="text-center py-16 text-sm text-slate-400">
+          <div className="text-center py-16 text-sm text-slate-400 dark:text-slate-500">
             아직 메모가 없어요. 위 버튼으로 새 메모를 시작해보세요.
           </div>
         )}
@@ -389,10 +545,10 @@ function MemoPanel() {
         {sortedMemos.map((memo) => (
           <div
             key={memo.id}
-            className="bg-white rounded-xl border border-slate-200 overflow-hidden px-4 py-3"
+            className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden px-4 py-3"
           >
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[11px] text-slate-400 font-mono">
+              <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">
                 {new Date(memo.updatedAt).toLocaleString("ko-KR", {
                   month: "long",
                   day: "numeric",
@@ -402,7 +558,7 @@ function MemoPanel() {
               </span>
               <button
                 onClick={() => deleteMemo(memo.id)}
-                className="text-slate-300 hover:text-red-500 p-1"
+                className="text-slate-300 dark:text-slate-600 hover:text-red-500 p-1"
               >
                 <Trash2 className="h-4 w-4" />
               </button>
@@ -412,24 +568,82 @@ function MemoPanel() {
               value={memo.text}
               onChange={(e) => updateMemo(memo.id, e.target.value)}
               placeholder="자유롭게 메모를 적어보세요."
-              rows={5}
-              className="w-full text-sm text-slate-700 outline-none resize-none leading-relaxed"
+              style={{ height: `${getHeight(memo)}px` }}
+              className="w-full text-sm text-slate-700 dark:text-slate-300 outline-none resize-none leading-relaxed"
             />
+            <div
+              onMouseDown={handleHeightDragStart(memo.id, getHeight(memo))}
+              className="flex items-center justify-center h-3 cursor-row-resize group -mb-1"
+              title="드래그해서 높이 조절"
+            >
+              <div className="w-10 h-1 rounded-full bg-slate-100 dark:bg-slate-700 group-hover:bg-slate-300 transition-colors" />
+            </div>
           </div>
         ))}
       </div>
+
+      {lastDeleted && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-3 z-50">
+          <span>메모를 삭제했어요</span>
+          <button
+            onClick={handleUndo}
+            className="font-semibold text-indigo-300 hover:text-indigo-200"
+          >
+            실행취소
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 function CalendarPanel() {
   const [notes, setNotes] = usePersistedState("work-journal-calendar-notes", {});
+  const [noteHeights, setNoteHeights] = usePersistedState("work-journal-calendar-note-heights", {});
   const [viewDate, setViewDate] = useState(() => {
     const d = new Date();
     d.setDate(1);
     return d;
   });
   const [selectedDate, setSelectedDate] = useState(todayKey());
+  const resizingRef = useRef({ date: null, startY: 0, startHeight: 0 });
+
+  const DEFAULT_NOTE_HEIGHT = 160;
+  const MIN_NOTE_HEIGHT = 100;
+  const MAX_NOTE_HEIGHT = 600;
+
+  const getNoteHeight = (dateKey) => noteHeights[dateKey] || DEFAULT_NOTE_HEIGHT;
+
+  const updateNoteHeight = (dateKey, height) => {
+    setNoteHeights((prev) => ({ ...prev, [dateKey]: height }));
+  };
+
+  const handleHeightDragStart = (dateKey, currentHeight) => (e) => {
+    resizingRef.current = { date: dateKey, startY: e.clientY, startHeight: currentHeight };
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      const { date, startY, startHeight } = resizingRef.current;
+      if (!date) return;
+      const delta = e.clientY - startY;
+      const next = Math.min(MAX_NOTE_HEIGHT, Math.max(MIN_NOTE_HEIGHT, startHeight + delta));
+      updateNoteHeight(date, next);
+    };
+    const handleMouseUp = () => {
+      resizingRef.current.date = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
 
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
@@ -462,27 +676,27 @@ function CalendarPanel() {
   return (
     <div>
       <div className="flex items-center justify-between mt-5 mb-4">
-        <p className="text-sm text-slate-400">날짜를 클릭해서 그날의 메모를 남겨요.</p>
+        <p className="text-sm text-slate-400 dark:text-slate-500">날짜를 클릭해서 그날의 메모를 남겨요.</p>
         <button
           onClick={goToday}
-          className="text-sm font-medium text-slate-600 hover:text-slate-900 px-2"
+          className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 px-2"
         >
           오늘로 이동
         </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 p-4">
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
         <div className="flex items-center justify-between mb-4">
           <button
             onClick={() => changeMonth(-1)}
-            className="text-slate-400 hover:text-slate-700 p-1"
+            className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 p-1"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="text-sm font-semibold text-slate-800">{formatMonthLabel(viewDate)}</span>
+          <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">{formatMonthLabel(viewDate)}</span>
           <button
             onClick={() => changeMonth(1)}
-            className="text-slate-400 hover:text-slate-700 p-1"
+            className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 p-1"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
@@ -490,7 +704,7 @@ function CalendarPanel() {
 
         <div className="grid grid-cols-7 mb-1">
           {WEEKDAY_LABELS.map((w) => (
-            <div key={w} className="text-center text-[11px] font-medium text-slate-400 py-1">
+            <div key={w} className="text-center text-[11px] font-medium text-slate-400 dark:text-slate-500 py-1">
               {w}
             </div>
           ))}
@@ -506,7 +720,7 @@ function CalendarPanel() {
             const isToday = dateKey === todayKey();
             const isSelected = dateKey === selectedDate;
 
-            let dayColor = "text-slate-600";
+            let dayColor = "text-slate-600 dark:text-slate-400";
             if (weekday === 0 || holidayName) dayColor = "text-red-500";
             else if (weekday === 6) dayColor = "text-blue-500";
 
@@ -519,11 +733,11 @@ function CalendarPanel() {
                   isSelected
                     ? "bg-slate-900 text-white"
                     : isToday
-                    ? "bg-indigo-50 font-semibold"
-                    : "hover:bg-slate-50"
+                    ? "bg-indigo-50 dark:bg-indigo-950 font-semibold"
+                    : "hover:bg-slate-50 dark:hover:bg-slate-700"
                 }`}
               >
-                <span className={isSelected ? "text-white" : isToday ? "text-indigo-700" : dayColor}>
+                <span className={isSelected ? "text-white" : isToday ? "text-indigo-700 dark:text-indigo-300" : dayColor}>
                   {day}
                 </span>
                 {holidayName && !isSelected && (
@@ -534,7 +748,7 @@ function CalendarPanel() {
                 {hasNote && (
                   <span
                     className={`absolute bottom-1 h-1 w-1 rounded-full ${
-                      isSelected ? "bg-white" : "bg-indigo-500"
+                      isSelected ? "bg-white dark:bg-slate-800" : "bg-indigo-500"
                     }`}
                   />
                 )}
@@ -544,11 +758,11 @@ function CalendarPanel() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 p-4 mt-3">
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 mt-3">
         <div className="flex items-center gap-2 mb-2">
-          <p className="text-sm font-semibold text-slate-800">{formatDateShort(selectedDate)}</p>
+          <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{formatDateShort(selectedDate)}</p>
           {HOLIDAYS[selectedDate] && (
-            <span className="text-[11px] font-medium text-red-500 bg-red-50 px-2 py-0.5 rounded-full">
+            <span className="text-[11px] font-medium text-red-500 bg-red-50 dark:bg-red-950 px-2 py-0.5 rounded-full">
               {HOLIDAYS[selectedDate]}
             </span>
           )}
@@ -557,9 +771,16 @@ function CalendarPanel() {
           value={notes[selectedDate] || ""}
           onChange={(e) => updateNote(selectedDate, e.target.value)}
           placeholder="이 날의 메모를 적어보세요."
-          rows={6}
-          className="w-full text-sm text-slate-700 outline-none resize-none border border-slate-100 rounded-lg p-3 focus:border-slate-300 leading-relaxed"
+          style={{ height: `${getNoteHeight(selectedDate)}px` }}
+          className="w-full text-sm text-slate-700 dark:text-slate-300 outline-none resize-none border border-slate-100 dark:border-slate-700 rounded-lg p-3 focus:border-slate-300 dark:focus:border-slate-500 leading-relaxed"
         />
+        <div
+          onMouseDown={handleHeightDragStart(selectedDate, getNoteHeight(selectedDate))}
+          className="flex items-center justify-center h-3 cursor-row-resize group"
+          title="드래그해서 높이 조절"
+        >
+          <div className="w-10 h-1 rounded-full bg-slate-100 dark:bg-slate-700 group-hover:bg-slate-300 transition-colors" />
+        </div>
       </div>
     </div>
   );
@@ -569,6 +790,8 @@ function FavoritesPanel() {
   const [links, setLinks] = usePersistedState("work-journal-favorites", []);
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
+  const [lastDeleted, setLastDeleted] = useState(null);
+  const undoTimerRef = useRef(null);
 
   const normalizeUrl = (raw) => {
     const trimmed = raw.trim();
@@ -594,30 +817,43 @@ function FavoritesPanel() {
   };
 
   const deleteLink = (id) => {
+    const link = links.find((l) => l.id === id);
     setLinks((prev) => prev.filter((l) => l.id !== id));
+    if (link) {
+      setLastDeleted(link);
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+      undoTimerRef.current = setTimeout(() => setLastDeleted(null), 6000);
+    }
+  };
+
+  const handleUndo = () => {
+    if (!lastDeleted) return;
+    setLinks((prev) => [...prev, lastDeleted]);
+    setLastDeleted(null);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
   };
 
   return (
     <div>
-      <p className="text-sm text-slate-400 mt-5 mb-4">자주 쓰는 사이트를 추가해두고 바로 이동해요.</p>
+      <p className="text-sm text-slate-400 dark:text-slate-500 mt-5 mb-4">자주 쓰는 사이트를 추가해두고 바로 이동해요.</p>
 
-      <div className="bg-white border border-slate-200 rounded-lg p-3 mb-5 flex flex-col sm:flex-row gap-2">
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 mb-5 flex flex-col sm:flex-row gap-2">
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="이름 (예: 회사 그룹웨어)"
-          className="flex-1 text-sm outline-none border border-slate-100 rounded-lg px-3 py-2"
+          className="flex-1 text-sm outline-none border border-slate-100 dark:border-slate-700 rounded-lg px-3 py-2"
         />
         <input
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && addLink()}
           placeholder="URL (예: notion.so)"
-          className="flex-1 text-sm outline-none border border-slate-100 rounded-lg px-3 py-2"
+          className="flex-1 text-sm outline-none border border-slate-100 dark:border-slate-700 rounded-lg px-3 py-2"
         />
         <button
           onClick={addLink}
-          className="flex items-center justify-center gap-1.5 bg-slate-900 text-white text-sm font-medium px-3.5 py-2 rounded-lg hover:bg-slate-700 transition-colors shrink-0"
+          className="flex items-center justify-center gap-1.5 bg-slate-900 text-white text-sm font-medium px-3.5 py-2 rounded-lg hover:bg-slate-700 dark:hover:bg-slate-600 transition-colors shrink-0"
         >
           <Plus className="h-4 w-4" />
           추가
@@ -625,7 +861,7 @@ function FavoritesPanel() {
       </div>
 
       {links.length === 0 ? (
-        <div className="text-center py-16 text-sm text-slate-400">
+        <div className="text-center py-16 text-sm text-slate-400 dark:text-slate-500">
           아직 즐겨찾기가 없어요. 위에서 링크를 추가해보세요.
         </div>
       ) : (
@@ -633,11 +869,11 @@ function FavoritesPanel() {
           {links.map((link) => (
             <div
               key={link.id}
-              className="group relative bg-white border border-slate-200 rounded-xl p-3 hover:border-slate-300 transition-colors"
+              className="group relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 hover:border-slate-300 transition-colors"
             >
               <button
                 onClick={() => deleteLink(link.id)}
-                className="absolute top-1.5 right-1.5 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"
+                className="absolute top-1.5 right-1.5 text-slate-300 dark:text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
@@ -647,7 +883,7 @@ function FavoritesPanel() {
                 rel="noopener noreferrer"
                 className="flex flex-col items-center text-center gap-2 pt-1"
               >
-                <div className="h-9 w-9 rounded-full bg-slate-100 flex items-center justify-center overflow-hidden">
+                <div className="h-9 w-9 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
                   <img
                     src={`https://www.google.com/s2/favicons?domain=${getDomain(link.url)}&sz=64`}
                     alt=""
@@ -657,10 +893,10 @@ function FavoritesPanel() {
                     }}
                   />
                 </div>
-                <span className="text-xs font-medium text-slate-700 truncate w-full">
+                <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full">
                   {link.title}
                 </span>
-                <span className="text-[10px] text-slate-400 truncate w-full">
+                <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate w-full">
                   {getDomain(link.url)}
                 </span>
               </a>
@@ -668,8 +904,40 @@ function FavoritesPanel() {
           ))}
         </div>
       )}
+
+      {lastDeleted && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-3 z-50">
+          <span>즐겨찾기를 삭제했어요</span>
+          <button
+            onClick={handleUndo}
+            className="font-semibold text-indigo-300 hover:text-indigo-200"
+          >
+            실행취소
+          </button>
+        </div>
+      )}
     </div>
   );
+}
+
+const BACKUP_KEYS = [
+  "work-journal-entries",
+  "work-journal-memos",
+  "work-journal-calendar-notes",
+  "work-journal-calendar-note-heights",
+  "work-journal-favorites",
+  "work-journal-tab-order",
+  "work-journal-width",
+  "work-journal-dark-mode",
+];
+
+function readLocalArray(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
 }
 
 const DEFAULT_TABS = [
@@ -679,12 +947,101 @@ const DEFAULT_TABS = [
   { id: "favorites", label: "즐겨찾기" },
 ];
 
-const MIN_WIDTH = 672; // 기존 기본 폭 (max-w-2xl 상당)
+const MIN_WIDTH = 1040; // 기본 폭 (오늘업무/내일업무 칸이 더 넓게 보이도록 확장)
 const MAX_WIDTH = Math.round(MIN_WIDTH * 1.5);
 
 export default function WorkJournalApp() {
   const [tabs, setTabs] = usePersistedState("work-journal-tab-order", DEFAULT_TABS);
   const [width, setWidth] = usePersistedState("work-journal-width", MIN_WIDTH);
+  const [darkMode, setDarkMode] = usePersistedState("work-journal-dark-mode", false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [pendingFocusDate, setPendingFocusDate] = useState(null);
+  const [pendingFocusMemoId, setPendingFocusMemoId] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return { journal: [], memo: [] };
+    const entries = readLocalArray("work-journal-entries");
+    const memos = readLocalArray("work-journal-memos");
+    const journal = entries
+      .filter(
+        (e) =>
+          (e.todayText || "").toLowerCase().includes(q) ||
+          (e.tomorrowText || "").toLowerCase().includes(q)
+      )
+      .sort((a, b) => b.date.localeCompare(a.date));
+    const memo = memos
+      .filter((m) => (m.text || "").toLowerCase().includes(q))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    return { journal, memo };
+  }, [searchQuery]);
+
+  const openJournalResult = (date) => {
+    setActiveTab("journal");
+    setPendingFocusDate(date);
+    setSearchOpen(false);
+    setSearchQuery("");
+  };
+
+  const openMemoResult = (id) => {
+    setActiveTab("memo");
+    setPendingFocusMemoId(id);
+    setSearchOpen(false);
+    setSearchQuery("");
+  };
+
+  const handleExport = () => {
+    const data = {};
+    BACKUP_KEYS.forEach((key) => {
+      const raw = localStorage.getItem(key);
+      if (raw !== null) {
+        try {
+          data[key] = JSON.parse(raw);
+        } catch {
+          data[key] = raw;
+        }
+      }
+    });
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `work-journal-backup-${todayKey()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setSettingsOpen(false);
+  };
+
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        BACKUP_KEYS.forEach((key) => {
+          if (data[key] !== undefined) {
+            localStorage.setItem(key, JSON.stringify(data[key]));
+          }
+        });
+        alert("데이터를 불러왔어요. 페이지를 새로고침할게요.");
+        window.location.reload();
+      } catch (err) {
+        alert("올바른 백업 파일이 아니에요.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  // 예전에 더 좁은 폭으로 저장해둔 경우, 새 최소/최대 범위에 맞게 자동 보정
+  useEffect(() => {
+    if (width < MIN_WIDTH) setWidth(MIN_WIDTH);
+    else if (width > MAX_WIDTH) setWidth(MAX_WIDTH);
+  }, [width, setWidth]);
   const [activeTab, setActiveTab] = useState("journal");
   const dragIndexRef = useRef(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);
@@ -745,10 +1102,65 @@ export default function WorkJournalApp() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex justify-center">
-      <div className="relative w-full" style={{ maxWidth: `${width}px` }}>
-        <div className="px-4 sm:px-6 py-8 sm:py-12">
-          <div className="flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
+    <div className={darkMode ? "dark" : ""}>
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex justify-center">
+        <div className="relative w-full" style={{ maxWidth: `${width}px` }}>
+          <div className="px-4 sm:px-6 py-8 sm:py-12">
+            <div className="flex items-center justify-between mb-2">
+              <div />
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setSearchOpen(true)}
+                  title="검색"
+                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                >
+                  <Search className="h-4 w-4" />
+                </button>
+                <div className="relative">
+                  <button
+                    onClick={() => setSettingsOpen((v) => !v)}
+                    title="설정"
+                    className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </button>
+                  {settingsOpen && (
+                    <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg py-1 z-50">
+                      <button
+                        onClick={() => setDarkMode((v) => !v)}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                      >
+                        {darkMode ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                        {darkMode ? "라이트 모드" : "다크 모드"}
+                      </button>
+                      <button
+                        onClick={handleExport}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                      >
+                        <Download className="h-4 w-4" />
+                        데이터 내보내기
+                      </button>
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                      >
+                        <Upload className="h-4 w-4" />
+                        데이터 가져오기
+                      </button>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="application/json"
+                        className="hidden"
+                        onChange={handleImportFile}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
             {tabs.map((tab, index) => (
               <div
                 key={tab.id}
@@ -756,7 +1168,7 @@ export default function WorkJournalApp() {
                 onDragStart={() => handleDragStart(index)}
                 onDragOver={(e) => handleDragOver(index, e)}
                 onDrop={() => handleDrop(index)}
-                className={dragOverIndex === index ? "bg-slate-100 rounded-t-lg" : ""}
+                className={dragOverIndex === index ? "bg-slate-100 dark:bg-slate-700 rounded-t-lg" : ""}
               >
                 <TabButton active={activeTab === tab.id} onClick={() => setActiveTab(tab.id)}>
                   {tab.label}
@@ -765,20 +1177,101 @@ export default function WorkJournalApp() {
             ))}
           </div>
 
-          {activeTab === "journal" && <JournalPanel />}
-          {activeTab === "memo" && <MemoPanel />}
+          {activeTab === "journal" && (
+            <JournalPanel
+              focusDate={pendingFocusDate}
+              onFocusHandled={() => setPendingFocusDate(null)}
+            />
+          )}
+          {activeTab === "memo" && (
+            <MemoPanel
+              focusMemoId={pendingFocusMemoId}
+              onFocusHandled={() => setPendingFocusMemoId(null)}
+            />
+          )}
           {activeTab === "calendar" && <CalendarPanel />}
           {activeTab === "favorites" && <FavoritesPanel />}
-        </div>
+          </div>
 
-        <div
-          onMouseDown={handleResizeStart}
-          title="드래그해서 폭 조절"
-          className="hidden sm:flex absolute top-0 -right-3 h-full w-3 cursor-ew-resize items-center justify-center group z-10"
-        >
-          <div className="h-16 w-1 rounded-full bg-slate-200 group-hover:bg-slate-400 group-active:bg-slate-500 transition-colors" />
+          <div
+            onMouseDown={handleResizeStart}
+            title="드래그해서 폭 조절"
+            className="hidden sm:flex absolute top-0 -right-3 h-full w-3 cursor-ew-resize items-center justify-center group z-10"
+          >
+            <div className="h-16 w-1 rounded-full bg-slate-200 dark:bg-slate-700 group-hover:bg-slate-400 dark:group-hover:bg-slate-500 group-active:bg-slate-500 transition-colors" />
+          </div>
         </div>
       </div>
+
+      {searchOpen && (
+        <div
+          className="fixed inset-0 bg-black/30 dark:bg-black/50 flex items-start justify-center pt-24 px-4 z-50"
+          onClick={() => setSearchOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-lg overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+              <Search className="h-4 w-4 text-slate-400 dark:text-slate-500 shrink-0" />
+              <input
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="업무일지, 메모 검색..."
+                className="flex-1 text-sm outline-none bg-transparent text-slate-700 dark:text-slate-200"
+              />
+              <button
+                onClick={() => setSearchOpen(false)}
+                className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              {searchQuery.trim() === "" && (
+                <p className="text-sm text-slate-400 dark:text-slate-500 px-4 py-6 text-center">검색어를 입력하세요.</p>
+              )}
+              {searchQuery.trim() !== "" &&
+                searchResults.journal.length === 0 &&
+                searchResults.memo.length === 0 && (
+                  <p className="text-sm text-slate-400 dark:text-slate-500 px-4 py-6 text-center">
+                    검색 결과가 없어요.
+                  </p>
+                )}
+              {searchResults.journal.length > 0 && (
+                <div className="px-4 pt-3 pb-1 text-xs font-semibold text-slate-400 dark:text-slate-500">업무일지</div>
+              )}
+              {searchResults.journal.map((entry) => (
+                <button
+                  key={entry.date}
+                  onClick={() => openJournalResult(entry.date)}
+                  className="w-full text-left px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700"
+                >
+                  <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
+                    {formatDateLabel(entry.date)}
+                  </div>
+                  <div className="text-xs text-slate-400 dark:text-slate-500 truncate">
+                    {(entry.todayText || entry.tomorrowText || "").slice(0, 60)}
+                  </div>
+                </button>
+              ))}
+              {searchResults.memo.length > 0 && (
+                <div className="px-4 pt-3 pb-1 text-xs font-semibold text-slate-400 dark:text-slate-500">메모장</div>
+              )}
+              {searchResults.memo.map((memo) => (
+                <button
+                  key={memo.id}
+                  onClick={() => openMemoResult(memo.id)}
+                  className="w-full text-left px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700"
+                >
+                  <div className="text-xs text-slate-400 dark:text-slate-500 truncate">{memo.text.slice(0, 80)}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

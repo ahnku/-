@@ -16,6 +16,7 @@ import {
   X,
   Phone,
   User,
+  Save,
 } from "lucide-react";
 
 function todayKey() {
@@ -153,15 +154,48 @@ function usePersistedState(key, defaultValue) {
     };
     window.addEventListener("beforeunload", flush);
     window.addEventListener("pagehide", flush);
+    window.addEventListener("workjournal-force-save", flush);
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       window.removeEventListener("beforeunload", flush);
       window.removeEventListener("pagehide", flush);
+      window.removeEventListener("workjournal-force-save", flush);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [key]);
 
   return [state, setState];
+}
+
+function ConfirmDialog({ open, message, onConfirm, onCancel }) {
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 bg-black/30 dark:bg-black/50 flex items-center justify-center px-4 z-50"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-white dark:bg-slate-800 rounded-xl shadow-xl p-5 w-full max-w-sm"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="text-sm text-slate-700 dark:text-slate-200 mb-4">{message}</p>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="text-sm font-medium px-3.5 py-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+          >
+            취소
+          </button>
+          <button
+            onClick={onConfirm}
+            className="text-sm font-medium px-3.5 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600"
+          >
+            삭제
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function TabButton({ active, onClick, children }) {
@@ -189,6 +223,7 @@ function JournalPanel({ focusDate, onFocusHandled }) {
   const resizingRef = useRef({ date: null, startY: 0, startHeight: 0 });
   const [lastDeleted, setLastDeleted] = useState(null);
   const undoTimerRef = useRef(null);
+  const [confirmDeleteDate, setConfirmDeleteDate] = useState(null);
 
   const DEFAULT_BOX_HEIGHT = 200;
   const MIN_BOX_HEIGHT = 100;
@@ -375,7 +410,7 @@ function JournalPanel({ focusDate, onFocusHandled }) {
                 </button>
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => deleteEntry(entry.date)}
+                    onClick={() => setConfirmDeleteDate(entry.date)}
                     className="text-slate-300 dark:text-slate-600 hover:text-red-500 p-1"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -453,6 +488,16 @@ function JournalPanel({ focusDate, onFocusHandled }) {
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteDate !== null}
+        message="이 날의 업무일지를 삭제하시겠어요?"
+        onCancel={() => setConfirmDeleteDate(null)}
+        onConfirm={() => {
+          deleteEntry(confirmDeleteDate);
+          setConfirmDeleteDate(null);
+        }}
+      />
     </div>
   );
 }
@@ -464,6 +509,7 @@ function MemoPanel({ focusMemoId, onFocusHandled }) {
   const [lastDeleted, setLastDeleted] = useState(null);
   const undoTimerRef = useRef(null);
   const [collapsed, setCollapsed] = useState({});
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const isCollapsed = (id) => Boolean(collapsed[id]);
   const toggleCollapse = (id) => {
@@ -590,7 +636,7 @@ function MemoPanel({ focusMemoId, onFocusHandled }) {
               </span>
               <div className="flex items-center gap-1 shrink-0">
                 <button
-                  onClick={() => deleteMemo(memo.id)}
+                  onClick={() => setConfirmDeleteId(memo.id)}
                   className="text-slate-300 dark:text-slate-600 hover:text-red-500 p-1"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -643,6 +689,16 @@ function MemoPanel({ focusMemoId, onFocusHandled }) {
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        message="이 메모를 삭제하시겠어요?"
+        onCancel={() => setConfirmDeleteId(null)}
+        onConfirm={() => {
+          deleteMemo(confirmDeleteId);
+          setConfirmDeleteId(null);
+        }}
+      />
     </div>
   );
 }
@@ -842,6 +898,7 @@ function FavoritesPanel() {
   const [url, setUrl] = useState("");
   const [lastDeleted, setLastDeleted] = useState(null);
   const undoTimerRef = useRef(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const normalizeUrl = (raw) => {
     const trimmed = raw.trim();
@@ -922,7 +979,7 @@ function FavoritesPanel() {
               className="group relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 hover:border-slate-300 transition-colors"
             >
               <button
-                onClick={() => deleteLink(link.id)}
+                onClick={() => setConfirmDeleteId(link.id)}
                 className="absolute top-1.5 right-1.5 text-slate-300 dark:text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"
               >
                 <Trash2 className="h-3.5 w-3.5" />
@@ -966,6 +1023,16 @@ function FavoritesPanel() {
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        message="이 즐겨찾기를 삭제하시겠어요?"
+        onCancel={() => setConfirmDeleteId(null)}
+        onConfirm={() => {
+          deleteLink(confirmDeleteId);
+          setConfirmDeleteId(null);
+        }}
+      />
     </div>
   );
 }
@@ -1001,6 +1068,7 @@ function PhonebookPanel() {
   const [filter, setFilter] = useState("");
   const [lastDeleted, setLastDeleted] = useState(null);
   const undoTimerRef = useRef(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   const existingCategories = useMemo(() => {
     const set = new Set(contacts.map((c) => c.category || "기타"));
@@ -1174,7 +1242,7 @@ function PhonebookPanel() {
                         </a>
                       )}
                       <button
-                        onClick={() => deleteContact(c.id)}
+                        onClick={() => setConfirmDeleteId(c.id)}
                         className="text-slate-300 dark:text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1.5"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -1199,6 +1267,16 @@ function PhonebookPanel() {
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        message="이 연락처를 삭제하시겠어요?"
+        onCancel={() => setConfirmDeleteId(null)}
+        onConfirm={() => {
+          deleteContact(confirmDeleteId);
+          setConfirmDeleteId(null);
+        }}
+      />
     </div>
   );
 }
@@ -1225,6 +1303,27 @@ export default function WorkJournalApp() {
   const [pendingFocusDate, setPendingFocusDate] = useState(null);
   const [pendingFocusMemoId, setPendingFocusMemoId] = useState(null);
   const fileInputRef = useRef(null);
+  const [saveToast, setSaveToast] = useState(false);
+  const saveToastTimerRef = useRef(null);
+
+  const triggerManualSave = () => {
+    window.dispatchEvent(new Event("workjournal-force-save"));
+    setSaveToast(true);
+    if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
+    saveToastTimerRef.current = setTimeout(() => setSaveToast(false), 2000);
+  };
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const isSaveShortcut = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s";
+      if (isSaveShortcut) {
+        e.preventDefault();
+        triggerManualSave();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const searchResults = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -1392,6 +1491,13 @@ export default function WorkJournalApp() {
             <div className="flex items-center justify-between mb-2">
               <div />
               <div className="flex items-center gap-1">
+                <button
+                  onClick={triggerManualSave}
+                  title="저장 (Ctrl+S)"
+                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                >
+                  <Save className="h-4 w-4" />
+                </button>
                 <button
                   onClick={() => setSearchOpen(true)}
                   title="검색"
@@ -1575,6 +1681,12 @@ export default function WorkJournalApp() {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {saveToast && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg z-50">
+          저장했어요
         </div>
       )}
     </div>

@@ -66,6 +66,7 @@ function formatDateShort(dateStr) {
 
 const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 
+// 대한민국 공휴일 (관공서의 공휴일에 관한 규정 기준, 대체공휴일 포함)
 const HOLIDAYS = {
   "2025-01-01": "신정",
   "2025-01-27": "임시공휴일(설날)",
@@ -108,6 +109,8 @@ const HOLIDAYS = {
   "2026-12-25": "성탄절",
 };
 
+// ---- 로컬 전용 상태(기기별 화면 설정: 탭 순서, 폭, 다크모드 등) ----
+// 서버 동기화가 필요 없는 값들은 그대로 이 브라우저에만 저장한다.
 function useLocalState(key, defaultValue) {
   const [state, setState] = useState(defaultValue);
   const [loaded, setLoaded] = useState(false);
@@ -167,6 +170,9 @@ function useLocalState(key, defaultValue) {
   return [state, setState];
 }
 
+// ---- 클라우드 상태(업무일지, 메모, 캘린더메모, 즐겨찾기, 연락처) ----
+// Supabase의 app_data 테이블에 user_id + key로 구분해서 저장한다.
+// RLS 정책 덕분에 각 사용자는 자기 user_id의 행만 읽고 쓸 수 있어서, 자동으로 사용자별로 분리된다.
 function useCloudState(key, defaultValue, userId) {
   const [state, setState] = useState(defaultValue);
   const [loaded, setLoaded] = useState(false);
@@ -291,6 +297,7 @@ function TabButton({ active, onClick, children }) {
   );
 }
 
+// entries/setEntries는 이제 부모(WorkJournalApp)에서 클라우드 상태로 관리해서 props로 내려온다.
 function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
   const [entryFontSize, setEntryFontSize] = useLocalState("work-journal-entry-font-size", 14);
   const [overrides, setOverrides] = useState({});
@@ -577,6 +584,7 @@ function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
   );
 }
 
+// memos/setMemos도 부모에서 클라우드 상태로 관리해서 props로 내려온다.
 function MemoPanel({ focusMemoId, onFocusHandled, memos, setMemos }) {
   const memoRefs = useRef({});
   const resizingRef = useRef({ id: null, startY: 0, startHeight: 0 });
@@ -776,6 +784,7 @@ function MemoPanel({ focusMemoId, onFocusHandled, memos, setMemos }) {
   );
 }
 
+// userId를 받아서 캘린더 메모를 사용자별 클라우드 상태로 관리한다.
 function CalendarPanel({ userId }) {
   const [notes, setNotes] = useCloudState("work-journal-calendar-notes", {}, userId);
   const [noteHeights, setNoteHeights] = useLocalState("work-journal-calendar-note-heights", {});
@@ -965,6 +974,7 @@ function CalendarPanel({ userId }) {
   );
 }
 
+// userId를 받아서 즐겨찾기를 사용자별 클라우드 상태로 관리한다.
 function FavoritesPanel({ userId }) {
   const [links, setLinks] = useCloudState("work-journal-favorites", [], userId);
   const [title, setTitle] = useState("");
@@ -1057,7 +1067,7 @@ function FavoritesPanel({ userId }) {
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
-              
+              <a
                 href={link.url}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -1110,6 +1120,7 @@ function FavoritesPanel({ userId }) {
   );
 }
 
+// 클라우드(Supabase)에 저장되는 데이터 키 목록. 내보내기/가져오기 대상이다.
 const CLOUD_KEYS = [
   "work-journal-entries",
   "work-journal-memos",
@@ -1118,6 +1129,7 @@ const CLOUD_KEYS = [
   "work-journal-contacts",
 ];
 
+// userId를 받아서 연락처를 사용자별 클라우드 상태로 관리한다.
 function PhonebookPanel({ userId }) {
   const [contacts, setContacts] = useCloudState("work-journal-contacts", [], userId);
   const [name, setName] = useState("");
@@ -1291,7 +1303,7 @@ function PhonebookPanel({ userId }) {
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {c.phone && (
-                        
+                        <a
                           href={`tel:${c.phone}`}
                           className="text-slate-300 dark:text-slate-600 hover:text-indigo-500 dark:hover:text-indigo-400 p-1.5"
                           title="전화 걸기"
@@ -1364,6 +1376,7 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
   const [saveToast, setSaveToast] = useState(false);
   const saveToastTimerRef = useRef(null);
 
+  // 업무일지/메모는 검색에서 함께 써야 해서 여기(최상위)에서 클라우드 상태로 관리하고 자식에게 내려준다.
   const [entries, setEntries] = useCloudState("work-journal-entries", [], userId);
   const [memos, setMemos] = useCloudState("work-journal-memos", [], userId);
 
@@ -1416,6 +1429,7 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
     setSearchQuery("");
   };
 
+  // 클라우드(Supabase)에 저장된 이 계정의 데이터를 모두 불러와서 파일로 내려받는다.
   const handleExport = async () => {
     const data = {};
     const { data: rows, error } = await supabase
@@ -1440,6 +1454,7 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
     setSettingsOpen(false);
   };
 
+  // 백업 파일을 클라우드(Supabase)에 다시 업로드한다. 완료되면 페이지를 새로고침해서 최신 상태를 반영한다.
   const handleImportFile = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1774,6 +1789,7 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
   );
 }
 
+// 로그인 상태에 따라 로그인 화면 또는 실제 앱을 보여준다.
 function AuthGate() {
   const { session, user, signOut } = useAuth();
 
@@ -1792,6 +1808,7 @@ function AuthGate() {
   return <WorkJournalApp userId={user.id} userEmail={user.email} onSignOut={signOut} />;
 }
 
+// 최종적으로 내보내는 컴포넌트. AuthProvider로 감싸서 로그인 상태를 앱 전체에 전달한다.
 export default function WorkJournalRoot() {
   return (
     <AuthProvider>

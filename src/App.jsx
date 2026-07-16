@@ -20,6 +20,7 @@ import {
   LogOut,
   Calendar,
   Star,
+  Pencil,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { AuthProvider, useAuth } from "./useAuth";
@@ -1463,6 +1464,10 @@ function PhonebookPanel({ userId }) {
   const [lastDeleted, setLastDeleted] = useState(null);
   const undoTimerRef = useRef(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [editCategory, setEditCategory] = useState("");
 
   const existingCategories = useMemo(() => {
     const set = new Set(contacts.map((c) => c.category || "기타"));
@@ -1502,6 +1507,35 @@ function PhonebookPanel({ userId }) {
     setContacts((prev) => [...prev, lastDeleted]);
     setLastDeleted(null);
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+  };
+
+  const startEdit = (contact) => {
+    setEditingId(contact.id);
+    setEditName(contact.name);
+    setEditPhone(contact.phone || "");
+    setEditCategory(contact.category || "");
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+  };
+
+  const saveEdit = () => {
+    const trimmedName = editName.trim();
+    if (!trimmedName) return;
+    setContacts((prev) =>
+      prev.map((c) =>
+        c.id === editingId
+          ? {
+              ...c,
+              name: trimmedName,
+              phone: editPhone.trim(),
+              category: editCategory.trim() || "기타",
+            }
+          : c
+      )
+    );
+    setEditingId(null);
   };
 
   const filteredContacts = contacts.filter((c) => {
@@ -1608,40 +1642,92 @@ function PhonebookPanel({ userId }) {
                 {list.map((c, idx) => (
                   <div
                     key={c.id}
-                    className={`group flex items-center justify-between px-4 py-2.5 ${
+                    className={`group flex items-center justify-between gap-2 px-4 py-2.5 ${
                       idx !== 0 ? "border-t border-slate-100 dark:border-slate-700" : ""
                     }`}
                   >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center shrink-0">
-                        <User className="h-4 w-4 text-slate-400 dark:text-slate-500" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
-                          {c.name}
+                    {editingId === c.id ? (
+                      <>
+                        <div className="flex-1 min-w-0 grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                          <input
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && saveEdit()}
+                            placeholder="이름"
+                            autoFocus
+                            className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1"
+                          />
+                          <input
+                            value={editPhone}
+                            onChange={(e) => setEditPhone(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && saveEdit()}
+                            placeholder="전화번호"
+                            className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1"
+                          />
+                          <input
+                            value={editCategory}
+                            onChange={(e) => setEditCategory(e.target.value)}
+                            onKeyDown={(e) => e.key === "Enter" && saveEdit()}
+                            placeholder="카테고리"
+                            className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-1"
+                          />
                         </div>
-                        <div className="text-xs text-slate-400 dark:text-slate-500 font-mono truncate">
-                          {c.phone || "번호 없음"}
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={saveEdit}
+                            className="text-xs font-medium text-indigo-500 hover:text-indigo-600 px-2 py-1"
+                          >
+                            저장
+                          </button>
+                          <button
+                            onClick={cancelEdit}
+                            className="text-xs font-medium text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 px-2 py-1"
+                          >
+                            취소
+                          </button>
                         </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {c.phone && (
-                        <a
-                          href={`tel:${c.phone}`}
-                          className="text-slate-300 dark:text-slate-600 hover:text-indigo-500 dark:hover:text-indigo-400 p-1.5"
-                          title="전화 걸기"
-                        >
-                          <Phone className="h-4 w-4" />
-                        </a>
-                      )}
-                      <button
-                        onClick={() => setConfirmDeleteId(c.id)}
-                        className="text-slate-300 dark:text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1.5"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="h-8 w-8 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center shrink-0">
+                            <User className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
+                              {c.name}
+                            </div>
+                            <div className="text-xs text-slate-400 dark:text-slate-500 font-mono truncate">
+                              {c.phone || "번호 없음"}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            onClick={() => startEdit(c)}
+                            title="수정"
+                            className="text-slate-400 dark:text-slate-500 hover:text-indigo-500 dark:hover:text-indigo-400 p-1.5"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          {c.phone && (
+                            <a
+                              href={`tel:${c.phone}`}
+                              className="text-slate-300 dark:text-slate-600 hover:text-indigo-500 dark:hover:text-indigo-400 p-1.5"
+                              title="전화 걸기"
+                            >
+                              <Phone className="h-4 w-4" />
+                            </a>
+                          )}
+                          <button
+                            onClick={() => setConfirmDeleteId(c.id)}
+                            className="text-slate-300 dark:text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1.5"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ))}
               </div>

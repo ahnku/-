@@ -17,6 +17,7 @@ import {
   Phone,
   User,
   Save,
+  Calendar,
 } from "lucide-react";
 
 function todayKey() {
@@ -214,6 +215,131 @@ function TabButton({ active, onClick, children }) {
   );
 }
 
+function MiniCalendarPicker({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [viewDate, setViewDate] = useState(() => {
+    const d = value ? new Date(value) : new Date();
+    d.setDate(1);
+    return d;
+  });
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const firstWeekday = new Date(year, month, 1).getDay();
+  const totalDays = new Date(year, month + 1, 0).getDate();
+  const cells = [];
+  for (let i = 0; i < firstWeekday; i++) cells.push(null);
+  for (let day = 1; day <= totalDays; day++) cells.push(day);
+
+  const changeMonth = (delta) => {
+    setViewDate((prev) => {
+      const next = new Date(prev);
+      next.setMonth(next.getMonth() + delta);
+      return next;
+    });
+  };
+
+  const openPicker = () => {
+    const d = value ? new Date(value) : new Date();
+    d.setDate(1);
+    setViewDate(d);
+    setOpen((v) => !v);
+  };
+
+  const handlePick = (dateKey) => {
+    onChange(dateKey);
+    setOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={wrapperRef}>
+      <button
+        onClick={openPicker}
+        className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/60 hover:bg-slate-100 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-500 transition-colors"
+      >
+        <Calendar className="h-4 w-4 text-slate-500 dark:text-slate-400 shrink-0" />
+        <span className="font-medium">{value}</span>
+        <ChevronDown className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500 ml-1" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-2 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-3 z-50">
+          <div className="flex items-center justify-between mb-2">
+            <button
+              onClick={() => changeMonth(-1)}
+              className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 p-1"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+              {formatMonthLabel(viewDate)}
+            </span>
+            <button
+              onClick={() => changeMonth(1)}
+              className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 p-1"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="grid grid-cols-7 mb-1">
+            {WEEKDAY_LABELS.map((w, idx) => (
+              <div
+                key={w}
+                className={`text-center text-[10px] font-medium py-0.5 ${
+                  idx === 0
+                    ? "text-red-500"
+                    : idx === 6
+                    ? "text-blue-500"
+                    : "text-slate-400 dark:text-slate-500"
+                }`}
+              >
+                {w}
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-0.5">
+            {cells.map((day, idx) => {
+              if (day === null) return <div key={`blank-${idx}`} />;
+              const dateKey = dateKeyOf(year, month, day);
+              const weekday = (firstWeekday + day - 1) % 7;
+              const isSelected = dateKey === value;
+              const isToday = dateKey === todayKey();
+              let color = "text-slate-600 dark:text-slate-400";
+              if (weekday === 0) color = "text-red-500";
+              else if (weekday === 6) color = "text-blue-500";
+              return (
+                <button
+                  key={dateKey}
+                  onClick={() => handlePick(dateKey)}
+                  className={`h-7 rounded text-xs flex items-center justify-center transition-colors ${
+                    isSelected
+                      ? "bg-slate-900 text-white"
+                      : isToday
+                      ? "bg-indigo-50 dark:bg-indigo-950 font-semibold"
+                      : "hover:bg-slate-50 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  <span className={isSelected ? "text-white" : color}>{day}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function JournalPanel({ focusDate, onFocusHandled }) {
   const [entries, setEntries] = usePersistedState("work-journal-entries", []);
   const [entryFontSize, setEntryFontSize] = usePersistedState("work-journal-entry-font-size", 14);
@@ -224,6 +350,17 @@ function JournalPanel({ focusDate, onFocusHandled }) {
   const [lastDeleted, setLastDeleted] = useState(null);
   const undoTimerRef = useRef(null);
   const [confirmDeleteDate, setConfirmDeleteDate] = useState(null);
+  const PAGE_SIZE = 7;
+  const [page, setPage] = useState(0);
+
+  const jumpToDate = (date, entriesList) => {
+    const list = entriesList.some((e) => e.date === date)
+      ? entriesList
+      : [...entriesList, { date }];
+    const sorted = [...list].sort((a, b) => b.date.localeCompare(a.date));
+    const idx = sorted.findIndex((e) => e.date === date);
+    if (idx >= 0) setPage(Math.floor(idx / PAGE_SIZE));
+  };
 
   const DEFAULT_BOX_HEIGHT = 200;
   const MIN_BOX_HEIGHT = 100;
@@ -263,6 +400,13 @@ function JournalPanel({ focusDate, onFocusHandled }) {
   }, []);
 
   const sortedEntries = [...entries].sort((a, b) => b.date.localeCompare(a.date));
+  const totalPages = Math.max(1, Math.ceil(sortedEntries.length / PAGE_SIZE));
+
+  useEffect(() => {
+    if (page > totalPages - 1) setPage(totalPages - 1);
+  }, [totalPages, page]);
+
+  const pagedEntries = sortedEntries.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   const isExpanded = (date) => {
     if (date in overrides) return overrides[date];
@@ -294,9 +438,10 @@ function JournalPanel({ focusDate, onFocusHandled }) {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
   };
 
-  // 검색 결과 클릭 등으로 특정 날짜에 포커스하라는 요청이 오면 펼치고 스크롤한다
+  // 검색 결과 클릭 등으로 특정 날짜에 포커스하라는 요청이 오면 펼치고, 해당 페이지로 이동 후 스크롤한다
   useEffect(() => {
     if (!focusDate) return;
+    jumpToDate(focusDate, entries);
     setEntries((prev) => {
       if (prev.some((e) => e.date === focusDate)) return prev;
       return [...prev, { date: focusDate, todayText: "", tomorrowText: "" }];
@@ -311,6 +456,7 @@ function JournalPanel({ focusDate, onFocusHandled }) {
 
   const createNewTodayPage = () => {
     const key = todayKey();
+    jumpToDate(key, entries);
     setEntries((prev) => {
       if (prev.some((e) => e.date === key)) return prev;
       return [...prev, { date: key, todayText: "", tomorrowText: "" }];
@@ -321,15 +467,21 @@ function JournalPanel({ focusDate, onFocusHandled }) {
     }, 50);
   };
 
-  const handleLookup = () => {
-    const exists = entries.some((e) => e.date === lookupDate);
+  const runLookup = (dateKey) => {
+    const exists = entries.some((e) => e.date === dateKey);
+    jumpToDate(dateKey, entries);
     if (!exists) {
-      setEntries((prev) => [...prev, { date: lookupDate, todayText: "", tomorrowText: "" }]);
+      setEntries((prev) => [...prev, { date: dateKey, todayText: "", tomorrowText: "" }]);
     }
-    setOverrides((prev) => ({ ...prev, [lookupDate]: true }));
+    setOverrides((prev) => ({ ...prev, [dateKey]: true }));
     setTimeout(() => {
-      entryRefs.current[lookupDate]?.scrollIntoView({ behavior: "smooth", block: "center" });
+      entryRefs.current[dateKey]?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 50);
+  };
+
+  const handleDatePick = (dateKey) => {
+    setLookupDate(dateKey);
+    runLookup(dateKey);
   };
 
   return (
@@ -363,20 +515,8 @@ function JournalPanel({ focusDate, onFocusHandled }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 mb-5">
-        <Search className="h-4 w-4 text-slate-400 dark:text-slate-500 shrink-0" />
-        <input
-          type="date"
-          value={lookupDate}
-          onChange={(e) => setLookupDate(e.target.value)}
-          className="flex-1 text-sm outline-none text-slate-700 dark:text-slate-300"
-        />
-        <button
-          onClick={handleLookup}
-          className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 px-2"
-        >
-          조회
-        </button>
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 mb-5">
+        <MiniCalendarPicker value={lookupDate} onChange={handleDatePick} />
       </div>
 
       <div className="space-y-3">
@@ -386,7 +526,7 @@ function JournalPanel({ focusDate, onFocusHandled }) {
           </div>
         )}
 
-        {sortedEntries.map((entry) => {
+        {pagedEntries.map((entry) => {
           const expanded = isExpanded(entry.date);
           const old = daysAgo(entry.date) >= 1;
           return (
@@ -471,6 +611,38 @@ function JournalPanel({ focusDate, onFocusHandled }) {
           );
         })}
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-1 mt-4">
+          <button
+            onClick={() => setPage((p) => Math.max(0, p - 1))}
+            disabled={page === 0}
+            className="p-1.5 rounded text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          {Array.from({ length: totalPages }, (_, i) => (
+            <button
+              key={i}
+              onClick={() => setPage(i)}
+              className={`w-7 h-7 rounded-lg text-xs font-medium ${
+                i === page
+                  ? "bg-slate-900 text-white"
+                  : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+              }`}
+            >
+              {i + 1}
+            </button>
+          ))}
+          <button
+            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+            disabled={page === totalPages - 1}
+            className="p-1.5 rounded text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       <p className="mt-6 text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
         작성한 내용은 이 브라우저에 자동 저장됩니다. 오늘 기록만 기본적으로 펼쳐져 있으며,
@@ -809,8 +981,17 @@ function CalendarPanel() {
         </div>
 
         <div className="grid grid-cols-7 mb-1">
-          {WEEKDAY_LABELS.map((w) => (
-            <div key={w} className="text-center text-[11px] font-medium text-slate-400 dark:text-slate-500 py-1">
+          {WEEKDAY_LABELS.map((w, idx) => (
+            <div
+              key={w}
+              className={`text-center text-[11px] font-medium py-1 ${
+                idx === 0
+                  ? "text-red-500"
+                  : idx === 6
+                  ? "text-blue-500"
+                  : "text-slate-400 dark:text-slate-500"
+              }`}
+            >
               {w}
             </div>
           ))}
@@ -896,9 +1077,11 @@ function FavoritesPanel() {
   const [links, setLinks] = usePersistedState("work-journal-favorites", []);
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
+  const [pendingIcon, setPendingIcon] = useState(null);
   const [lastDeleted, setLastDeleted] = useState(null);
   const undoTimerRef = useRef(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const iconInputRef = useRef(null);
 
   const normalizeUrl = (raw) => {
     const trimmed = raw.trim();
@@ -914,13 +1097,41 @@ function FavoritesPanel() {
     }
   };
 
+  const handleIconSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const size = 96;
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        const scale = Math.max(size / img.width, size / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        setPendingIcon(canvas.toDataURL("image/png"));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
   const addLink = () => {
     const finalUrl = normalizeUrl(url);
     if (!finalUrl) return;
     const finalTitle = title.trim() || getDomain(finalUrl);
-    setLinks((prev) => [...prev, { id: Date.now(), title: finalTitle, url: finalUrl }]);
+    setLinks((prev) => [
+      ...prev,
+      { id: Date.now(), title: finalTitle, url: finalUrl, customIcon: pendingIcon || null },
+    ]);
     setTitle("");
     setUrl("");
+    setPendingIcon(null);
   };
 
   const deleteLink = (id) => {
@@ -945,6 +1156,24 @@ function FavoritesPanel() {
       <p className="text-sm text-slate-400 dark:text-slate-500 mt-5 mb-4">자주 쓰는 사이트를 추가해두고 바로 이동해요.</p>
 
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 mb-5 flex flex-col sm:flex-row gap-2">
+        <button
+          onClick={() => iconInputRef.current?.click()}
+          title="아이콘 이미지 선택"
+          className="shrink-0 h-9 w-9 rounded-full border border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center overflow-hidden self-center sm:self-auto"
+        >
+          {pendingIcon ? (
+            <img src={pendingIcon} alt="" className="h-full w-full object-cover" />
+          ) : (
+            <Plus className="h-4 w-4 text-slate-300 dark:text-slate-600" />
+          )}
+        </button>
+        <input
+          ref={iconInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleIconSelect}
+        />
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -991,14 +1220,18 @@ function FavoritesPanel() {
                 className="flex flex-col items-center text-center gap-2 pt-1"
               >
                 <div className="h-9 w-9 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
-                  <img
-                    src={`https://www.google.com/s2/favicons?domain=${getDomain(link.url)}&sz=64`}
-                    alt=""
-                    className="h-5 w-5"
-                    onError={(e) => {
-                      e.target.style.display = "none";
-                    }}
-                  />
+                  {link.customIcon ? (
+                    <img src={link.customIcon} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <img
+                      src={`https://www.google.com/s2/favicons?domain=${getDomain(link.url)}&sz=64`}
+                      alt=""
+                      className="h-5 w-5"
+                      onError={(e) => {
+                        e.target.style.display = "none";
+                      }}
+                    />
+                  )}
                 </div>
                 <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full">
                   {link.title}

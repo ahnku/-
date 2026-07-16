@@ -1245,6 +1245,8 @@ function FavoritesPanel({ userId }) {
   const undoTimerRef = useRef(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const iconInputRef = useRef(null);
+  const pinDragIndexRef = useRef(null);
+  const [pinDragOverIndex, setPinDragOverIndex] = useState(null);
 
   const normalizeUrl = (raw) => {
     const trimmed = raw.trim();
@@ -1320,7 +1322,30 @@ function FavoritesPanel({ userId }) {
     );
   };
 
-  const sortedLinks = [...links].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  // 고정된 것들은 links 배열 안의 순서를 그대로 유지한 채 앞으로 모으고, 그 순서를 드래그로 바꿀 수 있게 한다.
+  const pinnedLinks = links.filter((l) => l.pinned);
+  const unpinnedLinks = links.filter((l) => !l.pinned);
+  const sortedLinks = [...pinnedLinks, ...unpinnedLinks];
+
+  const handlePinDragStart = (index) => {
+    pinDragIndexRef.current = index;
+  };
+
+  const handlePinDragOver = (index, e) => {
+    e.preventDefault();
+    setPinDragOverIndex(index);
+  };
+
+  const handlePinDrop = (index) => {
+    const from = pinDragIndexRef.current;
+    setPinDragOverIndex(null);
+    pinDragIndexRef.current = null;
+    if (from === null || from === index) return;
+    const reordered = [...pinnedLinks];
+    const [moved] = reordered.splice(from, 1);
+    reordered.splice(index, 0, moved);
+    setLinks([...reordered, ...unpinnedLinks]);
+  };
 
   return (
     <div>
@@ -1373,10 +1398,22 @@ function FavoritesPanel({ userId }) {
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {sortedLinks.map((link) => (
+          {sortedLinks.map((link, index) => (
             <div
               key={link.id}
-              className="group relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 hover:border-slate-300 transition-colors"
+              draggable={link.pinned}
+              onDragStart={() => link.pinned && handlePinDragStart(index)}
+              onDragOver={(e) => link.pinned && handlePinDragOver(index, e)}
+              onDrop={() => link.pinned && handlePinDrop(index)}
+              className={`group relative bg-white dark:bg-slate-800 border rounded-xl p-3 transition-colors ${
+                link.pinned
+                  ? `cursor-grab active:cursor-grabbing ${
+                      pinDragOverIndex === index
+                        ? "border-indigo-400 dark:border-indigo-500"
+                        : "border-slate-200 dark:border-slate-700 hover:border-slate-300"
+                    }`
+                  : "border-slate-200 dark:border-slate-700 hover:border-slate-300"
+              }`}
             >
               <button
                 onClick={() => togglePin(link.id)}

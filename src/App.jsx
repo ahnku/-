@@ -180,6 +180,7 @@ function useCloudState(key, defaultValue, userId) {
   const stateRef = useRef(state);
   const saveTimer = useRef(null);
   const skipNextSaveRef = useRef(false);
+  const lastLocalEditRef = useRef(0);
 
   useEffect(() => {
     stateRef.current = state;
@@ -228,7 +229,10 @@ function useCloudState(key, defaultValue, userId) {
           // 타이핑 중 커서가 끝으로 튀는 걸 막기 위해 아무것도 하지 않는다.
           const isSameAsLocal =
             JSON.stringify(row.value) === JSON.stringify(stateRef.current);
-          if (isSameAsLocal) return;
+          // 최근(2초 이내) 이 창에서 직접 타이핑한 게 있으면, 저장 신호가 갔다 오는
+          // 사이의 예전 버전으로 화면을 덮어쓰지 않도록 실시간 업데이트를 잠시 무시한다.
+          const recentlyEditedLocally = Date.now() - lastLocalEditRef.current < 2000;
+          if (isSameAsLocal || recentlyEditedLocally) return;
           skipNextSaveRef.current = true;
           setState(row.value);
         }
@@ -298,6 +302,7 @@ function useCloudState(key, defaultValue, userId) {
       skipNextSaveRef.current = false;
       return;
     }
+    lastLocalEditRef.current = Date.now();
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(save, 400);
     return () => clearTimeout(saveTimer.current);

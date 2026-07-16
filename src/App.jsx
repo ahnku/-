@@ -21,6 +21,7 @@ import {
   Calendar,
   Star,
   Pencil,
+  Bell,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { AuthProvider, useAuth } from "./useAuth";
@@ -1038,7 +1039,7 @@ function MemoPanel({ focusMemoId, onFocusHandled, memos, setMemos }) {
 
 // userId를 받아서 캘린더 메모를 사용자별 클라우드 상태로 관리한다.
 function CalendarPanel({ userId }) {
-  const [notes, setNotes] = useCloudState("work-journal-calendar-notes", {}, userId);
+  const [notes, setNotes, notesLoaded] = useCloudState("work-journal-calendar-notes", {}, userId);
   const [noteHeights, setNoteHeights] = useLocalState("work-journal-calendar-note-heights", {});
   const [viewDate, setViewDate] = useState(() => {
     const d = new Date();
@@ -1047,6 +1048,25 @@ function CalendarPanel({ userId }) {
   });
   const [selectedDate, setSelectedDate] = useState(todayKey());
   const resizingRef = useRef({ date: null, startY: 0, startHeight: 0 });
+  const [todayReminder, setTodayReminder] = useState(null);
+
+  // 오늘 날짜에 메모가 있으면, 하루에 한 번만 알림을 띄운다 (새로고침해도 다시 안 뜸)
+  useEffect(() => {
+    if (!notesLoaded) return;
+    const today = todayKey();
+    const todayNote = notes[today];
+    if (!todayNote || !todayNote.trim()) return;
+    const flagKey = `work-journal-calendar-notified-${today}`;
+    try {
+      if (localStorage.getItem(flagKey)) return;
+      localStorage.setItem(flagKey, "1");
+    } catch (e) {
+      // localStorage를 못 쓰는 환경이면 그냥 알림만 띄우고 넘어간다
+    }
+    setTodayReminder(todayNote.trim());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notesLoaded]);
+
 
   const DEFAULT_NOTE_HEIGHT = 160;
   const MIN_NOTE_HEIGHT = 100;
@@ -1231,6 +1251,19 @@ function CalendarPanel({ userId }) {
           <div className="w-10 h-1 rounded-full bg-slate-100 dark:bg-slate-700 group-hover:bg-slate-300 transition-colors" />
         </div>
       </div>
+
+      {todayReminder && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-3 z-50 max-w-sm">
+          <Bell className="h-4 w-4 text-amber-300 shrink-0" />
+          <span className="truncate">오늘 메모: {todayReminder}</span>
+          <button
+            onClick={() => setTodayReminder(null)}
+            className="text-slate-400 hover:text-white shrink-0"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

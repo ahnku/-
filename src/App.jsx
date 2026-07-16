@@ -174,6 +174,7 @@ function useCloudState(key, defaultValue, userId) {
   const [loaded, setLoaded] = useState(false);
   const stateRef = useRef(state);
   const saveTimer = useRef(null);
+  const skipNextSaveRef = useRef(false);
 
   useEffect(() => {
     stateRef.current = state;
@@ -201,6 +202,34 @@ function useCloudState(key, defaultValue, userId) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key, userId]);
 
+  // 다른 창/기기에서 같은 항목을 수정하면, 여기도 실시간으로 최신 내용을 받아온다.
+  // (Supabase 대시보드에서 app_data 테이블의 Realtime을 켜둬야 동작한다)
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`app_data_${key}_${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "app_data",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const row = payload.new;
+          if (row && row.key === key) {
+            skipNextSaveRef.current = true;
+            setState(row.value);
+          }
+        }
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, key]);
+
   const save = () => {
     if (!userId) return;
     supabase
@@ -221,6 +250,11 @@ function useCloudState(key, defaultValue, userId) {
 
   useEffect(() => {
     if (!loaded || !userId) return;
+    // 방금 다른 창에서 받아온 내용을 그대로 되돌려 보내는 걸 막는다 (무한 루프 방지)
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(save, 600);
     return () => clearTimeout(saveTimer.current);

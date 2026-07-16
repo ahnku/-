@@ -18,7 +18,6 @@ import {
   User,
   Save,
   LogOut,
-  Calendar,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { AuthProvider, useAuth } from "./useAuth";
@@ -67,6 +66,7 @@ function formatDateShort(dateStr) {
 
 const WEEKDAY_LABELS = ["일", "월", "화", "수", "목", "금", "토"];
 
+// 대한민국 공휴일 (관공서의 공휴일에 관한 규정 기준, 대체공휴일 포함)
 const HOLIDAYS = {
   "2025-01-01": "신정",
   "2025-01-27": "임시공휴일(설날)",
@@ -109,6 +109,8 @@ const HOLIDAYS = {
   "2026-12-25": "성탄절",
 };
 
+// ---- 로컬 전용 상태(기기별 화면 설정: 탭 순서, 폭, 다크모드 등) ----
+// 서버 동기화가 필요 없는 값들은 그대로 이 브라우저에만 저장한다.
 function useLocalState(key, defaultValue) {
   const [state, setState] = useState(defaultValue);
   const [loaded, setLoaded] = useState(false);
@@ -168,6 +170,9 @@ function useLocalState(key, defaultValue) {
   return [state, setState];
 }
 
+// ---- 클라우드 상태(업무일지, 메모, 캘린더메모, 즐겨찾기, 연락처) ----
+// Supabase의 app_data 테이블에 user_id + key로 구분해서 저장한다.
+// RLS 정책 덕분에 각 사용자는 자기 user_id의 행만 읽고 쓸 수 있어서, 자동으로 사용자별로 분리된다.
 function useCloudState(key, defaultValue, userId) {
   const [state, setState] = useState(defaultValue);
   const [loaded, setLoaded] = useState(false);
@@ -292,132 +297,7 @@ function TabButton({ active, onClick, children }) {
   );
 }
 
-function MiniCalendarPicker({ value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [viewDate, setViewDate] = useState(() => {
-    const d = value ? new Date(value) : new Date();
-    d.setDate(1);
-    return d;
-  });
-  const wrapperRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const year = viewDate.getFullYear();
-  const month = viewDate.getMonth();
-  const firstWeekday = new Date(year, month, 1).getDay();
-  const totalDays = new Date(year, month + 1, 0).getDate();
-  const cells = [];
-  for (let i = 0; i < firstWeekday; i++) cells.push(null);
-  for (let day = 1; day <= totalDays; day++) cells.push(day);
-
-  const changeMonth = (delta) => {
-    setViewDate((prev) => {
-      const next = new Date(prev);
-      next.setMonth(next.getMonth() + delta);
-      return next;
-    });
-  };
-
-  const openPicker = () => {
-    const d = value ? new Date(value) : new Date();
-    d.setDate(1);
-    setViewDate(d);
-    setOpen((v) => !v);
-  };
-
-  const handlePick = (dateKey) => {
-    onChange(dateKey);
-    setOpen(false);
-  };
-
-  return (
-    <div className="relative" ref={wrapperRef}>
-      <button
-        onClick={openPicker}
-        className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/60 hover:bg-slate-100 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-500 transition-colors"
-      >
-        <Calendar className="h-4 w-4 text-slate-500 dark:text-slate-400 shrink-0" />
-        <span className="font-medium">{value}</span>
-        <ChevronDown className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500 ml-1" />
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full mt-2 w-64 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg p-3 z-50">
-          <div className="flex items-center justify-between mb-2">
-            <button
-              onClick={() => changeMonth(-1)}
-              className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 p-1"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-            <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-              {formatMonthLabel(viewDate)}
-            </span>
-            <button
-              onClick={() => changeMonth(1)}
-              className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 p-1"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="grid grid-cols-7 mb-1">
-            {WEEKDAY_LABELS.map((w, idx) => (
-              <div
-                key={w}
-                className={`text-center text-[10px] font-medium py-0.5 ${
-                  idx === 0
-                    ? "text-red-500"
-                    : idx === 6
-                    ? "text-blue-500"
-                    : "text-slate-400 dark:text-slate-500"
-                }`}
-              >
-                {w}
-              </div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 gap-0.5">
-            {cells.map((day, idx) => {
-              if (day === null) return <div key={`blank-${idx}`} />;
-              const dateKey = dateKeyOf(year, month, day);
-              const weekday = (firstWeekday + day - 1) % 7;
-              const isSelected = dateKey === value;
-              const isToday = dateKey === todayKey();
-              let color = "text-slate-600 dark:text-slate-400";
-              if (weekday === 0) color = "text-red-500";
-              else if (weekday === 6) color = "text-blue-500";
-              return (
-                <button
-                  key={dateKey}
-                  onClick={() => handlePick(dateKey)}
-                  className={`h-7 rounded text-xs flex items-center justify-center transition-colors ${
-                    isSelected
-                      ? "bg-slate-900 text-white"
-                      : isToday
-                      ? "bg-indigo-50 dark:bg-indigo-950 font-semibold"
-                      : "hover:bg-slate-50 dark:hover:bg-slate-700"
-                  }`}
-                >
-                  <span className={isSelected ? "text-white" : color}>{day}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// entries/setEntries는 부모(WorkJournalApp)에서 클라우드 상태로 관리해서 props로 내려온다.
+// entries/setEntries는 이제 부모(WorkJournalApp)에서 클라우드 상태로 관리해서 props로 내려온다.
 function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
   const [entryFontSize, setEntryFontSize] = useLocalState("work-journal-entry-font-size", 14);
   const [overrides, setOverrides] = useState({});
@@ -427,17 +307,6 @@ function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
   const [lastDeleted, setLastDeleted] = useState(null);
   const undoTimerRef = useRef(null);
   const [confirmDeleteDate, setConfirmDeleteDate] = useState(null);
-  const PAGE_SIZE = 7;
-  const [page, setPage] = useState(0);
-
-  const jumpToDate = (date, entriesList) => {
-    const list = entriesList.some((e) => e.date === date)
-      ? entriesList
-      : [...entriesList, { date }];
-    const sorted = [...list].sort((a, b) => b.date.localeCompare(a.date));
-    const idx = sorted.findIndex((e) => e.date === date);
-    if (idx >= 0) setPage(Math.floor(idx / PAGE_SIZE));
-  };
 
   const DEFAULT_BOX_HEIGHT = 200;
   const MIN_BOX_HEIGHT = 100;
@@ -477,13 +346,6 @@ function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
   }, []);
 
   const sortedEntries = [...entries].sort((a, b) => b.date.localeCompare(a.date));
-  const totalPages = Math.max(1, Math.ceil(sortedEntries.length / PAGE_SIZE));
-
-  useEffect(() => {
-    if (page > totalPages - 1) setPage(totalPages - 1);
-  }, [totalPages, page]);
-
-  const pagedEntries = sortedEntries.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
 
   const isExpanded = (date) => {
     if (date in overrides) return overrides[date];
@@ -517,7 +379,6 @@ function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
 
   useEffect(() => {
     if (!focusDate) return;
-    jumpToDate(focusDate, entries);
     setEntries((prev) => {
       if (prev.some((e) => e.date === focusDate)) return prev;
       return [...prev, { date: focusDate, todayText: "", tomorrowText: "" }];
@@ -532,7 +393,6 @@ function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
 
   const createNewTodayPage = () => {
     const key = todayKey();
-    jumpToDate(key, entries);
     setEntries((prev) => {
       if (prev.some((e) => e.date === key)) return prev;
       return [...prev, { date: key, todayText: "", tomorrowText: "" }];
@@ -543,21 +403,15 @@ function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
     }, 50);
   };
 
-  const runLookup = (dateKey) => {
-    const exists = entries.some((e) => e.date === dateKey);
-    jumpToDate(dateKey, entries);
+  const handleLookup = () => {
+    const exists = entries.some((e) => e.date === lookupDate);
     if (!exists) {
-      setEntries((prev) => [...prev, { date: dateKey, todayText: "", tomorrowText: "" }]);
+      setEntries((prev) => [...prev, { date: lookupDate, todayText: "", tomorrowText: "" }]);
     }
-    setOverrides((prev) => ({ ...prev, [dateKey]: true }));
+    setOverrides((prev) => ({ ...prev, [lookupDate]: true }));
     setTimeout(() => {
-      entryRefs.current[dateKey]?.scrollIntoView({ behavior: "smooth", block: "center" });
+      entryRefs.current[lookupDate]?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 50);
-  };
-
-  const handleDatePick = (dateKey) => {
-    setLookupDate(dateKey);
-    runLookup(dateKey);
   };
 
   return (
@@ -591,8 +445,20 @@ function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
         </div>
       </div>
 
-      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 mb-5">
-        <MiniCalendarPicker value={lookupDate} onChange={handleDatePick} />
+      <div className="flex items-center gap-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 mb-5">
+        <Search className="h-4 w-4 text-slate-400 dark:text-slate-500 shrink-0" />
+        <input
+          type="date"
+          value={lookupDate}
+          onChange={(e) => setLookupDate(e.target.value)}
+          className="flex-1 text-sm outline-none text-slate-700 dark:text-slate-300"
+        />
+        <button
+          onClick={handleLookup}
+          className="text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 px-2"
+        >
+          조회
+        </button>
       </div>
 
       <div className="space-y-3">
@@ -602,7 +468,7 @@ function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
           </div>
         )}
 
-        {pagedEntries.map((entry) => {
+        {sortedEntries.map((entry) => {
           const expanded = isExpanded(entry.date);
           const old = daysAgo(entry.date) >= 1;
           return (
@@ -687,38 +553,6 @@ function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
           );
         })}
       </div>
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-1 mt-4">
-          <button
-            onClick={() => setPage((p) => Math.max(0, p - 1))}
-            disabled={page === 0}
-            className="p-1.5 rounded text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          {Array.from({ length: totalPages }, (_, i) => (
-            <button
-              key={i}
-              onClick={() => setPage(i)}
-              className={`w-7 h-7 rounded-lg text-xs font-medium ${
-                i === page
-                  ? "bg-slate-900 text-white"
-                  : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
-              }`}
-            >
-              {i + 1}
-            </button>
-          ))}
-          <button
-            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-            disabled={page === totalPages - 1}
-            className="p-1.5 rounded text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:pointer-events-none"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
-      )}
 
       <p className="mt-6 text-xs text-slate-400 dark:text-slate-500 leading-relaxed">
         작성한 내용은 클라우드 계정에 자동 저장되어, 로그인하면 어느 기기에서든 볼 수 있어요. 오늘 기록만
@@ -1057,17 +891,8 @@ function CalendarPanel({ userId }) {
         </div>
 
         <div className="grid grid-cols-7 mb-1">
-          {WEEKDAY_LABELS.map((w, idx) => (
-            <div
-              key={w}
-              className={`text-center text-[11px] font-medium py-1 ${
-                idx === 0
-                  ? "text-red-500"
-                  : idx === 6
-                  ? "text-blue-500"
-                  : "text-slate-400 dark:text-slate-500"
-              }`}
-            >
+          {WEEKDAY_LABELS.map((w) => (
+            <div key={w} className="text-center text-[11px] font-medium text-slate-400 dark:text-slate-500 py-1">
               {w}
             </div>
           ))}
@@ -1154,11 +979,9 @@ function FavoritesPanel({ userId }) {
   const [links, setLinks] = useCloudState("work-journal-favorites", [], userId);
   const [title, setTitle] = useState("");
   const [url, setUrl] = useState("");
-  const [pendingIcon, setPendingIcon] = useState(null);
   const [lastDeleted, setLastDeleted] = useState(null);
   const undoTimerRef = useRef(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  const iconInputRef = useRef(null);
 
   const normalizeUrl = (raw) => {
     const trimmed = raw.trim();
@@ -1174,41 +997,13 @@ function FavoritesPanel({ userId }) {
     }
   };
 
-  const handleIconSelect = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const img = new Image();
-      img.onload = () => {
-        const size = 96;
-        const canvas = document.createElement("canvas");
-        canvas.width = size;
-        canvas.height = size;
-        const ctx = canvas.getContext("2d");
-        const scale = Math.max(size / img.width, size / img.height);
-        const w = img.width * scale;
-        const h = img.height * scale;
-        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        setPendingIcon(canvas.toDataURL("image/png"));
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-    e.target.value = "";
-  };
-
   const addLink = () => {
     const finalUrl = normalizeUrl(url);
     if (!finalUrl) return;
     const finalTitle = title.trim() || getDomain(finalUrl);
-    setLinks((prev) => [
-      ...prev,
-      { id: Date.now(), title: finalTitle, url: finalUrl, customIcon: pendingIcon || null },
-    ]);
+    setLinks((prev) => [...prev, { id: Date.now(), title: finalTitle, url: finalUrl }]);
     setTitle("");
     setUrl("");
-    setPendingIcon(null);
   };
 
   const deleteLink = (id) => {
@@ -1233,24 +1028,6 @@ function FavoritesPanel({ userId }) {
       <p className="text-sm text-slate-400 dark:text-slate-500 mt-5 mb-4">자주 쓰는 사이트를 추가해두고 바로 이동해요.</p>
 
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 mb-5 flex flex-col sm:flex-row gap-2">
-        <button
-          onClick={() => iconInputRef.current?.click()}
-          title="아이콘 이미지 선택"
-          className="shrink-0 h-9 w-9 rounded-full border border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center overflow-hidden self-center sm:self-auto"
-        >
-          {pendingIcon ? (
-            <img src={pendingIcon} alt="" className="h-full w-full object-cover" />
-          ) : (
-            <Plus className="h-4 w-4 text-slate-300 dark:text-slate-600" />
-          )}
-        </button>
-        <input
-          ref={iconInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleIconSelect}
-        />
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -1297,18 +1074,14 @@ function FavoritesPanel({ userId }) {
                 className="flex flex-col items-center text-center gap-2 pt-1"
               >
                 <div className="h-9 w-9 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden">
-                  {link.customIcon ? (
-                    <img src={link.customIcon} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <img
-                      src={`https://www.google.com/s2/favicons?domain=${getDomain(link.url)}&sz=64`}
-                      alt=""
-                      className="h-5 w-5"
-                      onError={(e) => {
-                        e.target.style.display = "none";
-                      }}
-                    />
-                  )}
+                  <img
+                    src={`https://www.google.com/s2/favicons?domain=${getDomain(link.url)}&sz=64`}
+                    alt=""
+                    className="h-5 w-5"
+                    onError={(e) => {
+                      e.target.style.display = "none";
+                    }}
+                  />
                 </div>
                 <span className="text-xs font-medium text-slate-700 dark:text-slate-300 truncate w-full">
                   {link.title}

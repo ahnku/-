@@ -25,6 +25,10 @@ import { supabase } from "./supabaseClient";
 import { AuthProvider, useAuth } from "./useAuth";
 import LoginScreen from "./LoginScreen";
 
+// 페이지를 닫는 순간에도 저장 요청이 끊기지 않도록, fetch(keepalive)로 직접 보낼 때 필요한 값
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
 function todayKey() {
   const d = new Date();
   const y = d.getFullYear();
@@ -224,7 +228,9 @@ function useCloudState(key, defaultValue, userId) {
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        console.log(`[realtime:${key}]`, status, err || "");
+      });
     return () => {
       supabase.removeChannel(channel);
     };
@@ -248,6 +254,38 @@ function useCloudState(key, defaultValue, userId) {
       });
   };
 
+  // 탭을 닫거나 새로고침하는 순간엔 일반 요청이 도중에 끊길 수 있어서,
+  // 브라우저가 페이지를 닫아도 끝까지 전송을 보장하는 fetch(keepalive)로 대신 보낸다.
+  const flushKeepalive = () => {
+    if (!userId || !SUPABASE_URL) return;
+    supabase.auth.getSession().then(({ data }) => {
+      const token = data?.session?.access_token;
+      if (!token) return;
+      try {
+        fetch(`${SUPABASE_URL}/rest/v1/app_data`, {
+          method: "POST",
+          keepalive: true,
+          headers: {
+            "Content-Type": "application/json",
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${token}`,
+            Prefer: "resolution=merge-duplicates,return=minimal",
+          },
+          body: JSON.stringify([
+            {
+              user_id: userId,
+              key,
+              value: stateRef.current,
+              updated_at: new Date().toISOString(),
+            },
+          ]),
+        });
+      } catch (e) {
+        console.error("긴급 저장 실패:", e);
+      }
+    });
+  };
+
   useEffect(() => {
     if (!loaded || !userId) return;
     // 방금 다른 창에서 받아온 내용을 그대로 되돌려 보내는 걸 막는다 (무한 루프 방지)
@@ -256,22 +294,25 @@ function useCloudState(key, defaultValue, userId) {
       return;
     }
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(save, 600);
+    saveTimer.current = setTimeout(save, 400);
     return () => clearTimeout(saveTimer.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, loaded, userId, key]);
 
   useEffect(() => {
     const handleForceSave = () => save();
+    const handleLeaving = () => flushKeepalive();
     const handleVisibility = () => {
-      if (document.visibilityState === "hidden") save();
+      if (document.visibilityState === "hidden") flushKeepalive();
     };
     window.addEventListener("workjournal-force-save", handleForceSave);
-    window.addEventListener("beforeunload", handleForceSave);
+    window.addEventListener("beforeunload", handleLeaving);
+    window.addEventListener("pagehide", handleLeaving);
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       window.removeEventListener("workjournal-force-save", handleForceSave);
-      window.removeEventListener("beforeunload", handleForceSave);
+      window.removeEventListener("beforeunload", handleLeaving);
+      window.removeEventListener("pagehide", handleLeaving);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

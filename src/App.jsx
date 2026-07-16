@@ -223,10 +223,14 @@ function useCloudState(key, defaultValue, userId) {
         },
         (payload) => {
           const row = payload.new;
-          if (row && row.key === key) {
-            skipNextSaveRef.current = true;
-            setState(row.value);
-          }
+          if (!row || row.key !== key) return;
+          // 방금 이 창에서 직접 저장한 내용이 그대로 되돌아온 것뿐이면(메아리),
+          // 타이핑 중 커서가 끝으로 튀는 걸 막기 위해 아무것도 하지 않는다.
+          const isSameAsLocal =
+            JSON.stringify(row.value) === JSON.stringify(stateRef.current);
+          if (isSameAsLocal) return;
+          skipNextSaveRef.current = true;
+          setState(row.value);
         }
       )
       .subscribe((status, err) => {

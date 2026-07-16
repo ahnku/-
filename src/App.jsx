@@ -1246,7 +1246,7 @@ function FavoritesPanel({ userId }) {
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const iconInputRef = useRef(null);
   const pinDragIndexRef = useRef(null);
-  const [pinDragOverIndex, setPinDragOverIndex] = useState(null);
+  const [pinDragOverInfo, setPinDragOverInfo] = useState(null); // { index, side: 'before' | 'after' }
 
   const normalizeUrl = (raw) => {
     const trimmed = raw.trim();
@@ -1333,18 +1333,39 @@ function FavoritesPanel({ userId }) {
 
   const handlePinDragOver = (index, e) => {
     e.preventDefault();
-    setPinDragOverIndex(index);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const isLeftHalf = e.clientX < rect.left + rect.width / 2;
+    setPinDragOverInfo({ index, side: isLeftHalf ? "before" : "after" });
   };
 
-  const handlePinDrop = (index) => {
-    const from = pinDragIndexRef.current;
-    setPinDragOverIndex(null);
+  const handlePinDragEnd = () => {
     pinDragIndexRef.current = null;
-    if (from === null || from === index) return;
+    setPinDragOverInfo(null);
+  };
+
+  const handlePinDrop = () => {
+    const from = pinDragIndexRef.current;
+    const info = pinDragOverInfo;
+    pinDragIndexRef.current = null;
+    setPinDragOverInfo(null);
+    if (from === null || !info) return;
+
+    // info.index/side를 "이 자리 앞(gap)에 끼워넣는다"는 하나의 위치(gapIndex)로 환산한다.
+    let gapIndex = info.side === "before" ? info.index : info.index + 1;
+    if (from === gapIndex || from + 1 === gapIndex) return; // 제자리로 다시 놓는 경우
+
     const reordered = [...pinnedLinks];
     const [moved] = reordered.splice(from, 1);
-    reordered.splice(index, 0, moved);
-    setLinks([...reordered, ...unpinnedLinks]);
+    if (from < gapIndex) gapIndex -= 1; // 앞에서 하나 빠졌으니 삽입 위치도 한 칸 당긴다
+    reordered.splice(gapIndex, 0, moved);
+
+    const applyReorder = () => setLinks([...reordered, ...unpinnedLinks]);
+    // 지원되는 브라우저에서는 카드가 새 자리로 슥 이동하는 애니메이션을 붙인다.
+    if (document.startViewTransition) {
+      document.startViewTransition(applyReorder);
+    } else {
+      applyReorder();
+    }
   };
 
   return (
@@ -1404,17 +1425,21 @@ function FavoritesPanel({ userId }) {
               draggable={link.pinned}
               onDragStart={() => link.pinned && handlePinDragStart(index)}
               onDragOver={(e) => link.pinned && handlePinDragOver(index, e)}
-              onDrop={() => link.pinned && handlePinDrop(index)}
+              onDrop={() => link.pinned && handlePinDrop()}
+              onDragEnd={handlePinDragEnd}
+              style={{ viewTransitionName: `fav-${link.id}` }}
               className={`group relative bg-white dark:bg-slate-800 border rounded-xl p-3 transition-colors ${
                 link.pinned
-                  ? `cursor-grab active:cursor-grabbing ${
-                      pinDragOverIndex === index
-                        ? "border-indigo-400 dark:border-indigo-500"
-                        : "border-slate-200 dark:border-slate-700 hover:border-slate-300"
-                    }`
+                  ? "cursor-grab active:cursor-grabbing border-slate-200 dark:border-slate-700 hover:border-slate-300"
                   : "border-slate-200 dark:border-slate-700 hover:border-slate-300"
               }`}
             >
+              {pinDragOverInfo?.index === index && pinDragOverInfo.side === "before" && (
+                <span className="absolute -left-2 top-2 bottom-2 w-1 rounded-full bg-indigo-500 animate-pulse" />
+              )}
+              {pinDragOverInfo?.index === index && pinDragOverInfo.side === "after" && (
+                <span className="absolute -right-2 top-2 bottom-2 w-1 rounded-full bg-indigo-500 animate-pulse" />
+              )}
               <button
                 onClick={() => togglePin(link.id)}
                 title={link.pinned ? "고정 해제" : "상단 고정"}

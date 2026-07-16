@@ -19,6 +19,7 @@ import {
   Save,
   LogOut,
   Calendar,
+  Star,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { AuthProvider, useAuth } from "./useAuth";
@@ -1228,6 +1229,14 @@ function FavoritesPanel({ userId }) {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
   };
 
+  const togglePin = (id) => {
+    setLinks((prev) =>
+      prev.map((l) => (l.id === id ? { ...l, pinned: !l.pinned } : l))
+    );
+  };
+
+  const sortedLinks = [...links].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+
   return (
     <div>
       <p className="text-sm text-slate-400 dark:text-slate-500 mt-5 mb-4">자주 쓰는 사이트를 추가해두고 바로 이동해요.</p>
@@ -1279,14 +1288,27 @@ function FavoritesPanel({ userId }) {
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-          {links.map((link) => (
+          {sortedLinks.map((link) => (
             <div
               key={link.id}
               className="group relative bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 hover:border-slate-300 transition-colors"
             >
               <button
+                onClick={() => togglePin(link.id)}
+                title={link.pinned ? "고정 해제" : "상단 고정"}
+                className="absolute top-1.5 right-1.5 p-1"
+              >
+                <Star
+                  className={`h-3.5 w-3.5 transition-colors ${
+                    link.pinned
+                      ? "fill-amber-400 text-amber-400"
+                      : "fill-none text-slate-300 dark:text-slate-600 opacity-0 group-hover:opacity-100"
+                  }`}
+                />
+              </button>
+              <button
                 onClick={() => setConfirmDeleteId(link.id)}
-                className="absolute top-1.5 right-1.5 text-slate-300 dark:text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"
+                className="absolute top-1.5 right-7 text-slate-300 dark:text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 p-1"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>

@@ -21,6 +21,8 @@ import {
   Calendar,
   Star,
   Pencil,
+  ArrowLeftRight,
+  RefreshCw,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { AuthProvider, useAuth } from "./useAuth";
@@ -1840,12 +1842,290 @@ function PhonebookPanel({ userId }) {
   );
 }
 
+// 카테고리별 단위와 기준 단위 대비 배율 (온도는 배율로 안 되기 때문에 따로 처리한다)
+const UNIT_CATEGORIES = {
+  length: {
+    label: "길이",
+    units: [
+      { id: "mm", label: "mm", factor: 0.001 },
+      { id: "cm", label: "cm", factor: 0.01 },
+      { id: "m", label: "m", factor: 1 },
+      { id: "km", label: "km", factor: 1000 },
+      { id: "inch", label: "인치", factor: 0.0254 },
+      { id: "ft", label: "피트", factor: 0.3048 },
+      { id: "mile", label: "마일", factor: 1609.34 },
+      { id: "px", label: "px", factor: 0.0254 / 96 },
+    ],
+    default: ["cm", "inch"],
+  },
+  weight: {
+    label: "무게",
+    units: [
+      { id: "g", label: "g", factor: 0.001 },
+      { id: "kg", label: "kg", factor: 1 },
+      { id: "ton", label: "톤", factor: 1000 },
+      { id: "oz", label: "온스", factor: 0.0283495 },
+      { id: "lb", label: "파운드", factor: 0.453592 },
+    ],
+    default: ["kg", "lb"],
+  },
+  area: {
+    label: "면적",
+    units: [
+      { id: "m2", label: "m²", factor: 1 },
+      { id: "pyeong", label: "평", factor: 3.305785 },
+      { id: "ha", label: "헥타르", factor: 10000 },
+      { id: "km2", label: "km²", factor: 1000000 },
+      { id: "ft2", label: "ft²", factor: 0.092903 },
+    ],
+    default: ["m2", "pyeong"],
+  },
+  temperature: {
+    label: "온도",
+    units: [
+      { id: "c", label: "섭씨(°C)" },
+      { id: "f", label: "화씨(°F)" },
+      { id: "k", label: "켈빈(K)" },
+    ],
+    default: ["c", "f"],
+  },
+};
+
+function convertLinear(value, fromFactor, toFactor) {
+  return (value * fromFactor) / toFactor;
+}
+
+function convertTemperature(value, from, to) {
+  let celsius;
+  if (from === "c") celsius = value;
+  else if (from === "f") celsius = ((value - 32) * 5) / 9;
+  else celsius = value - 273.15;
+
+  if (to === "c") return celsius;
+  if (to === "f") return (celsius * 9) / 5 + 32;
+  return celsius + 273.15;
+}
+
+function UnitConverterPanel() {
+  const [category, setCategory] = useState("length");
+  const [fromUnit, setFromUnit] = useState(UNIT_CATEGORIES.length.default[0]);
+  const [toUnit, setToUnit] = useState(UNIT_CATEGORIES.length.default[1]);
+  const [amount, setAmount] = useState("1");
+
+  const [currencyRates, setCurrencyRates] = useState(null);
+  const [currencyLoading, setCurrencyLoading] = useState(false);
+  const [currencyError, setCurrencyError] = useState("");
+  const [fromCurrency, setFromCurrency] = useState("USD");
+  const [toCurrency, setToCurrency] = useState("KRW");
+  const CURRENCIES = ["USD", "KRW", "EUR", "JPY", "CNY", "GBP"];
+
+  const changeCategory = (cat) => {
+    setCategory(cat);
+    if (cat !== "currency") {
+      setFromUnit(UNIT_CATEGORIES[cat].default[0]);
+      setToUnit(UNIT_CATEGORIES[cat].default[1]);
+    }
+  };
+
+  const fetchRates = () => {
+    setCurrencyLoading(true);
+    setCurrencyError("");
+    fetch("https://api.frankfurter.app/latest?from=USD&to=KRW,EUR,JPY,CNY,GBP")
+      .then((res) => {
+        if (!res.ok) throw new Error("요청 실패");
+        return res.json();
+      })
+      .then((data) => {
+        setCurrencyRates({ ...data.rates, USD: 1, date: data.date });
+        setCurrencyLoading(false);
+      })
+      .catch(() => {
+        setCurrencyError("환율 정보를 불러올 수 없어요. 인터넷 연결을 확인해주세요.");
+        setCurrencyLoading(false);
+      });
+  };
+
+  useEffect(() => {
+    if (category === "currency" && !currencyRates && !currencyLoading) {
+      fetchRates();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [category]);
+
+  const numericAmount = parseFloat(amount);
+  const validAmount = Number.isFinite(numericAmount) ? numericAmount : 0;
+
+  let result = null;
+  if (category === "temperature") {
+    result = convertTemperature(validAmount, fromUnit, toUnit);
+  } else if (category === "currency") {
+    if (currencyRates) {
+      const usdValue = validAmount / currencyRates[fromCurrency];
+      result = usdValue * currencyRates[toCurrency];
+    }
+  } else {
+    const units = UNIT_CATEGORIES[category].units;
+    const from = units.find((u) => u.id === fromUnit);
+    const to = units.find((u) => u.id === toUnit);
+    if (from && to) result = convertLinear(validAmount, from.factor, to.factor);
+  }
+
+  const formatResult = (num) => {
+    if (num === null || !Number.isFinite(num)) return "-";
+    return num.toLocaleString("ko-KR", { maximumFractionDigits: 4 });
+  };
+
+  const swapUnits = () => {
+    if (category === "currency") {
+      setFromCurrency(toCurrency);
+      setToCurrency(fromCurrency);
+    } else {
+      setFromUnit(toUnit);
+      setToUnit(fromUnit);
+    }
+  };
+
+  return (
+    <div>
+      <p className="text-sm text-slate-400 dark:text-slate-500 mt-5 mb-4">
+        자주 쓰는 단위와 환율을 빠르게 변환해요.
+      </p>
+
+      <div className="flex items-center gap-1 mb-4 overflow-x-auto">
+        {Object.entries(UNIT_CATEGORIES).map(([id, cat]) => (
+          <button
+            key={id}
+            onClick={() => changeCategory(id)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap ${
+              category === id
+                ? "bg-slate-900 text-white"
+                : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+            }`}
+          >
+            {cat.label}
+          </button>
+        ))}
+        <button
+          onClick={() => changeCategory("currency")}
+          className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap ${
+            category === "currency"
+              ? "bg-slate-900 text-white"
+              : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+          }`}
+        >
+          환율
+        </button>
+      </div>
+
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <input
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="flex-1 min-w-0 text-lg font-semibold outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2"
+          />
+          {category === "currency" ? (
+            <select
+              value={fromCurrency}
+              onChange={(e) => setFromCurrency(e.target.value)}
+              className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-2"
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <select
+              value={fromUnit}
+              onChange={(e) => setFromUnit(e.target.value)}
+              className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-2"
+            >
+              {UNIT_CATEGORIES[category].units.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        <div className="flex items-center justify-center mb-3">
+          <button
+            onClick={swapUnits}
+            title="바꾸기"
+            className="p-1.5 rounded-full border border-slate-200 dark:border-slate-600 text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700"
+          >
+            <ArrowLeftRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="flex-1 min-w-0 text-lg font-semibold text-indigo-600 dark:text-indigo-400 border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 rounded-lg px-3 py-2 truncate">
+            {category === "currency" && currencyLoading
+              ? "불러오는 중..."
+              : formatResult(result)}
+          </div>
+          {category === "currency" ? (
+            <select
+              value={toCurrency}
+              onChange={(e) => setToCurrency(e.target.value)}
+              className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-2"
+            >
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <select
+              value={toUnit}
+              onChange={(e) => setToUnit(e.target.value)}
+              className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-2"
+            >
+              {UNIT_CATEGORIES[category].units.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {category === "currency" && (
+          <div className="flex items-center justify-between mt-3">
+            {currencyError ? (
+              <p className="text-xs text-red-500">{currencyError}</p>
+            ) : (
+              <p className="text-xs text-slate-400 dark:text-slate-500">
+                {currencyRates ? `${currencyRates.date} 기준 환율 (참고용)` : ""}
+              </p>
+            )}
+            <button
+              onClick={fetchRates}
+              disabled={currencyLoading}
+              className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3 w-3 ${currencyLoading ? "animate-spin" : ""}`} />
+              새로고침
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const DEFAULT_TABS = [
   { id: "journal", label: "업무일지" },
   { id: "memo", label: "메모장" },
   { id: "calendar", label: "캘린더" },
   { id: "favorites", label: "즐겨찾기" },
   { id: "phonebook", label: "전화번호부" },
+  { id: "converter", label: "단위변환" },
 ];
 
 const MIN_WIDTH = 1040;
@@ -2187,6 +2467,7 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
           {activeTab === "calendar" && <CalendarPanel userId={userId} />}
           {activeTab === "favorites" && <FavoritesPanel userId={userId} />}
           {activeTab === "phonebook" && <PhonebookPanel userId={userId} />}
+          {activeTab === "converter" && <UnitConverterPanel />}
           </div>
 
           <div

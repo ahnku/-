@@ -699,7 +699,7 @@ function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
               <div className="flex items-center gap-2 px-4 py-3">
                 <button
                   onClick={() => toggleExpand(entry.date)}
-                  className="flex items-center gap-2 text-left shrink-0"
+                  className="flex items-center gap-2 text-left flex-1 min-w-0"
                 >
                   <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                     {formatDateLabel(entry.date)}
@@ -713,8 +713,10 @@ function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
                 <input
                   value={entry.summary || ""}
                   onChange={(e) => updateText(entry.date, "summary", e.target.value)}
-                  placeholder="간단한 메모..."
-                  className="flex-1 min-w-0 text-sm text-slate-400 dark:text-slate-500 bg-transparent outline-none truncate placeholder:text-slate-300 dark:placeholder:text-slate-600"
+                  placeholder="메모"
+                  maxLength={10}
+                  style={{ width: "10ch" }}
+                  className="shrink-0 text-sm text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded-md px-2 py-1 outline-none truncate placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-slate-200 dark:focus:bg-slate-600"
                 />
                 <div className="flex items-center gap-1 shrink-0">
                   <button

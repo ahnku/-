@@ -696,21 +696,27 @@ function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
               key={entry.date}
               className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden"
             >
-              <div className="flex items-center justify-between px-4 py-3">
+              <div className="flex items-center gap-2 px-4 py-3">
                 <button
                   onClick={() => toggleExpand(entry.date)}
-                  className="flex items-center gap-2 text-left flex-1"
+                  className="flex items-center gap-2 text-left shrink-0"
                 >
-                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                     {formatDateLabel(entry.date)}
                   </span>
                   {old && (
-                    <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono whitespace-nowrap">
                       {daysAgo(entry.date)}일 전
                     </span>
                   )}
                 </button>
-                <div className="flex items-center gap-1">
+                <input
+                  value={entry.summary || ""}
+                  onChange={(e) => updateText(entry.date, "summary", e.target.value)}
+                  placeholder="간단한 메모..."
+                  className="flex-1 min-w-0 text-sm text-slate-400 dark:text-slate-500 bg-transparent outline-none truncate placeholder:text-slate-300 dark:placeholder:text-slate-600"
+                />
+                <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => setConfirmDeleteDate(entry.date)}
                     className="text-slate-300 dark:text-slate-600 hover:text-red-500 p-1"

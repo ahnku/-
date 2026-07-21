@@ -22,7 +22,6 @@ import {
   Star,
   Pencil,
   ArrowLeftRight,
-  RefreshCw,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { AuthProvider, useAuth } from "./useAuth";
@@ -1911,13 +1910,7 @@ function UnitConverterPanel() {
   const [fromUnit, setFromUnit] = useState(UNIT_CATEGORIES.length.default[0]);
   const [toUnit, setToUnit] = useState(UNIT_CATEGORIES.length.default[1]);
   const [amount, setAmount] = useState("1");
-
-  const [currencyRates, setCurrencyRates] = useState(null);
-  const [currencyLoading, setCurrencyLoading] = useState(false);
-  const [currencyError, setCurrencyError] = useState("");
-  const [fromCurrency, setFromCurrency] = useState("USD");
-  const [toCurrency, setToCurrency] = useState("KRW");
-  const CURRENCIES = ["USD", "KRW", "EUR", "JPY", "CNY", "GBP"];
+  const [amount2, setAmount2] = useState("");
   const [pxPpi, setPxPpi] = useState(72);
 
   const getUnitsForCategory = (cat) => {
@@ -1928,54 +1921,25 @@ function UnitConverterPanel() {
 
   const changeCategory = (cat) => {
     setCategory(cat);
-    if (cat !== "currency") {
-      setFromUnit(UNIT_CATEGORIES[cat].default[0]);
-      setToUnit(UNIT_CATEGORIES[cat].default[1]);
-    }
+    setFromUnit(UNIT_CATEGORIES[cat].default[0]);
+    setToUnit(UNIT_CATEGORIES[cat].default[1]);
   };
 
-  const fetchRates = () => {
-    setCurrencyLoading(true);
-    setCurrencyError("");
-    fetch("https://api.frankfurter.app/latest?from=USD&to=KRW,EUR,JPY,CNY,GBP")
-      .then((res) => {
-        if (!res.ok) throw new Error("요청 실패");
-        return res.json();
-      })
-      .then((data) => {
-        setCurrencyRates({ ...data.rates, USD: 1, date: data.date });
-        setCurrencyLoading(false);
-      })
-      .catch(() => {
-        setCurrencyError("환율 정보를 불러올 수 없어요. 인터넷 연결을 확인해주세요.");
-        setCurrencyLoading(false);
-      });
-  };
-
-  useEffect(() => {
-    if (category === "currency" && !currencyRates && !currencyLoading) {
-      fetchRates();
+  const computeResult = (rawAmount) => {
+    const numeric = parseFloat(rawAmount);
+    const valid = Number.isFinite(numeric) ? numeric : 0;
+    if (category === "temperature") {
+      return convertTemperature(valid, fromUnit, toUnit);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category]);
-
-  const numericAmount = parseFloat(amount);
-  const validAmount = Number.isFinite(numericAmount) ? numericAmount : 0;
-
-  let result = null;
-  if (category === "temperature") {
-    result = convertTemperature(validAmount, fromUnit, toUnit);
-  } else if (category === "currency") {
-    if (currencyRates) {
-      const usdValue = validAmount / currencyRates[fromCurrency];
-      result = usdValue * currencyRates[toCurrency];
-    }
-  } else {
     const units = getUnitsForCategory(category);
     const from = units.find((u) => u.id === fromUnit);
     const to = units.find((u) => u.id === toUnit);
-    if (from && to) result = convertLinear(validAmount, from.factor, to.factor);
-  }
+    if (!from || !to) return null;
+    return convertLinear(valid, from.factor, to.factor);
+  };
+
+  const result = computeResult(amount);
+  const result2 = computeResult(amount2);
 
   const formatResult = (num) => {
     if (num === null || !Number.isFinite(num)) return "-";
@@ -1983,19 +1947,14 @@ function UnitConverterPanel() {
   };
 
   const swapUnits = () => {
-    if (category === "currency") {
-      setFromCurrency(toCurrency);
-      setToCurrency(fromCurrency);
-    } else {
-      setFromUnit(toUnit);
-      setToUnit(fromUnit);
-    }
+    setFromUnit(toUnit);
+    setToUnit(fromUnit);
   };
 
   return (
     <div>
       <p className="text-sm text-slate-400 dark:text-slate-500 mt-5 mb-4">
-        자주 쓰는 단위와 환율을 빠르게 변환해요.
+        자주 쓰는 단위를 빠르게 변환해요.
       </p>
 
       <div className="flex items-center gap-1 mb-4 overflow-x-auto">
@@ -2012,16 +1971,6 @@ function UnitConverterPanel() {
             {cat.label}
           </button>
         ))}
-        <button
-          onClick={() => changeCategory("currency")}
-          className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap ${
-            category === "currency"
-              ? "bg-slate-900 text-white"
-              : "text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700"
-          }`}
-        >
-          환율
-        </button>
       </div>
 
       {category === "length" && (
@@ -2046,102 +1995,72 @@ function UnitConverterPanel() {
       )}
 
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <input
-            type="number"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="flex-1 min-w-0 text-lg font-semibold outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2"
-          />
-          {category === "currency" ? (
-            <select
-              value={fromCurrency}
-              onChange={(e) => setFromCurrency(e.target.value)}
-              className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-2"
-            >
-              {CURRENCIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <select
-              value={fromUnit}
-              onChange={(e) => setFromUnit(e.target.value)}
-              className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-2"
-            >
-              {getUnitsForCategory(category).map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.label}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-
-        <div className="flex items-center justify-center mb-3">
+        <div className="flex items-center justify-center gap-3 mb-4">
+          <select
+            value={fromUnit}
+            onChange={(e) => setFromUnit(e.target.value)}
+            className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-2"
+          >
+            {getUnitsForCategory(category).map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.label}
+              </option>
+            ))}
+          </select>
           <button
             onClick={swapUnits}
             title="바꾸기"
-            className="p-1.5 rounded-full border border-slate-200 dark:border-slate-600 text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700"
+            className="p-1.5 rounded-full border border-slate-200 dark:border-slate-600 text-slate-400 dark:text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 shrink-0"
           >
             <ArrowLeftRight className="h-4 w-4" />
           </button>
+          <select
+            value={toUnit}
+            onChange={(e) => setToUnit(e.target.value)}
+            className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-2"
+          >
+            {getUnitsForCategory(category).map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.label}
+              </option>
+            ))}
+          </select>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="flex-1 min-w-0 text-lg font-semibold text-indigo-600 dark:text-indigo-400 border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 rounded-lg px-3 py-2 truncate">
-            {category === "currency" && currencyLoading
-              ? "불러오는 중..."
-              : formatResult(result)}
+        <div className="space-y-2.5">
+          <div className="flex items-center gap-2">
+            <span className="w-9 shrink-0 text-xs font-medium text-slate-400 dark:text-slate-500">
+              {category === "length" ? "가로" : "값 1"}
+            </span>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="flex-1 min-w-0 text-base font-semibold outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2"
+            />
+            <span className="text-slate-300 dark:text-slate-600">→</span>
+            <div className="flex-1 min-w-0 text-base font-semibold text-indigo-600 dark:text-indigo-400 border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 rounded-lg px-3 py-2 truncate">
+              {formatResult(result)}
+            </div>
           </div>
-          {category === "currency" ? (
-            <select
-              value={toCurrency}
-              onChange={(e) => setToCurrency(e.target.value)}
-              className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-2"
-            >
-              {CURRENCIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <select
-              value={toUnit}
-              onChange={(e) => setToUnit(e.target.value)}
-              className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-2"
-            >
-              {getUnitsForCategory(category).map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.label}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
 
-        {category === "currency" && (
-          <div className="flex items-center justify-between mt-3">
-            {currencyError ? (
-              <p className="text-xs text-red-500">{currencyError}</p>
-            ) : (
-              <p className="text-xs text-slate-400 dark:text-slate-500">
-                {currencyRates ? `${currencyRates.date} 기준 환율 (참고용)` : ""}
-              </p>
-            )}
-            <button
-              onClick={fetchRates}
-              disabled={currencyLoading}
-              className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3 w-3 ${currencyLoading ? "animate-spin" : ""}`} />
-              새로고침
-            </button>
+          <div className="flex items-center gap-2">
+            <span className="w-9 shrink-0 text-xs font-medium text-slate-400 dark:text-slate-500">
+              {category === "length" ? "세로" : "값 2"}
+            </span>
+            <input
+              type="number"
+              value={amount2}
+              onChange={(e) => setAmount2(e.target.value)}
+              placeholder="(선택)"
+              className="flex-1 min-w-0 text-base font-semibold outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2 placeholder:text-slate-300 dark:placeholder:text-slate-600"
+            />
+            <span className="text-slate-300 dark:text-slate-600">→</span>
+            <div className="flex-1 min-w-0 text-base font-semibold text-indigo-600 dark:text-indigo-400 border border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 rounded-lg px-3 py-2 truncate">
+              {formatResult(result2)}
+            </div>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

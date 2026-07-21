@@ -1918,6 +1918,13 @@ function UnitConverterPanel() {
   const [fromCurrency, setFromCurrency] = useState("USD");
   const [toCurrency, setToCurrency] = useState("KRW");
   const CURRENCIES = ["USD", "KRW", "EUR", "JPY", "CNY", "GBP"];
+  const [pxPpi, setPxPpi] = useState(72);
+
+  const getUnitsForCategory = (cat) => {
+    const units = UNIT_CATEGORIES[cat]?.units || [];
+    if (cat !== "length") return units;
+    return units.map((u) => (u.id === "px" ? { ...u, factor: 0.0254 / pxPpi } : u));
+  };
 
   const changeCategory = (cat) => {
     setCategory(cat);
@@ -1964,7 +1971,7 @@ function UnitConverterPanel() {
       result = usdValue * currencyRates[toCurrency];
     }
   } else {
-    const units = UNIT_CATEGORIES[category].units;
+    const units = getUnitsForCategory(category);
     const from = units.find((u) => u.id === fromUnit);
     const to = units.find((u) => u.id === toUnit);
     if (from && to) result = convertLinear(validAmount, from.factor, to.factor);
@@ -2017,6 +2024,27 @@ function UnitConverterPanel() {
         </button>
       </div>
 
+      {category === "length" && (
+        <div className="flex items-center gap-2 mb-3 text-xs text-slate-400 dark:text-slate-500">
+          <span>px 변환 기준</span>
+          <div className="flex items-center gap-1">
+            {[72, 96, 150, 300].map((ppi) => (
+              <button
+                key={ppi}
+                onClick={() => setPxPpi(ppi)}
+                className={`px-2 py-1 rounded-md font-medium ${
+                  pxPpi === ppi
+                    ? "bg-slate-900 text-white"
+                    : "border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700"
+                }`}
+              >
+                {ppi}ppi
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
         <div className="flex items-center gap-2 mb-3">
           <input
@@ -2043,7 +2071,7 @@ function UnitConverterPanel() {
               onChange={(e) => setFromUnit(e.target.value)}
               className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-2"
             >
-              {UNIT_CATEGORIES[category].units.map((u) => (
+              {getUnitsForCategory(category).map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.label}
                 </option>
@@ -2086,7 +2114,7 @@ function UnitConverterPanel() {
               onChange={(e) => setToUnit(e.target.value)}
               className="text-sm outline-none border border-slate-200 dark:border-slate-600 bg-transparent text-slate-700 dark:text-slate-200 rounded-lg px-2 py-2"
             >
-              {UNIT_CATEGORIES[category].units.map((u) => (
+              {getUnitsForCategory(category).map((u) => (
                 <option key={u.id} value={u.id}>
                   {u.label}
                 </option>

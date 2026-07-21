@@ -1856,7 +1856,7 @@ const UNIT_CATEGORIES = {
       { id: "mile", label: "마일", factor: 1609.34 },
       { id: "px", label: "px", factor: 0.0254 / 96 },
     ],
-    default: ["cm", "inch"],
+    default: ["px", "mm"],
   },
   weight: {
     label: "무게",

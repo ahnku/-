@@ -715,7 +715,7 @@ function JournalPanel({ focusDate, onFocusHandled, entries, setEntries }) {
                   onChange={(e) => updateText(entry.date, "summary", e.target.value)}
                   placeholder="메모"
                   maxLength={10}
-                  style={{ width: "10ch" }}
+                  style={{ width: "calc(10ch + 1rem)" }}
                   className="shrink-0 text-sm text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 rounded-md px-2 py-1 outline-none truncate placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:bg-slate-200 dark:focus:bg-slate-600"
                 />
                 <div className="flex items-center gap-1 shrink-0">

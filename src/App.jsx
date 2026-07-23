@@ -41,6 +41,10 @@ supabase.auth.onAuthStateChange((_event, session) => {
   cachedAccessToken = session?.access_token || null;
 });
 
+// Ctrl+S(수동 저장) 눌렀을 때, 여러 항목이 각자 저장한 결과(Promise)를 여기 모아두고
+// 전부 끝난 뒤에야 "저장했어요"를 보여주기 위한 임시 저장소.
+const pendingForceSaves = [];
+
 function todayKey() {
   const d = new Date();
   const y = d.getFullYear();
@@ -258,9 +262,9 @@ function useCloudState(key, defaultValue, userId) {
   }, [userId, key]);
 
   const save = (isRetry = false) => {
-    if (!userId) return;
+    if (!userId) return Promise.resolve({ error: null });
     lastSaveSentRef.current = Date.now();
-    supabase
+    return supabase
       .from("app_data")
       .upsert(
         {
@@ -275,8 +279,13 @@ function useCloudState(key, defaultValue, userId) {
         if (error) {
           console.error("저장 실패:", error);
           // 네트워크가 잠깐 끊겼다 돌아온 경우를 대비해 한 번만 재시도한다.
-          if (!isRetry) setTimeout(() => save(true), 1500);
+          if (!isRetry) {
+            return new Promise((resolve) => {
+              setTimeout(() => resolve(save(true)), 1500);
+            });
+          }
         }
+        return { error };
       });
   };
 
@@ -325,7 +334,9 @@ function useCloudState(key, defaultValue, userId) {
   }, [state, loaded, userId, key]);
 
   useEffect(() => {
-    const handleForceSave = () => save();
+    const handleForceSave = () => {
+      pendingForceSaves.push(save());
+    };
     const handleLeaving = () => flushKeepalive();
     const handleVisibility = () => {
       if (document.visibilityState === "hidden") flushKeepalive();
@@ -2103,7 +2114,7 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
   const [pendingFocusDate, setPendingFocusDate] = useState(null);
   const [pendingFocusMemoId, setPendingFocusMemoId] = useState(null);
   const fileInputRef = useRef(null);
-  const [saveToast, setSaveToast] = useState(false);
+  const [saveToast, setSaveToast] = useState(null); // null | "saving" | "success" | "error"
   const saveToastTimerRef = useRef(null);
 
   // 업무일지/메모는 검색에서 함께 써야 해서 여기(최상위)에서 클라우드 상태로 관리하고 자식에게 내려준다.
@@ -2111,10 +2122,20 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
   const [memos, setMemos] = useCloudState("work-journal-memos", [], userId);
 
   const triggerManualSave = () => {
+    pendingForceSaves.length = 0;
     window.dispatchEvent(new Event("workjournal-force-save"));
-    setSaveToast(true);
+    // 위 dispatchEvent는 동기적으로 실행되기 때문에, 여기 도달했을 때 각 항목의
+    // 저장 요청(Promise)이 이미 pendingForceSaves에 다 등록되어 있다.
+    const promises = [...pendingForceSaves];
     if (saveToastTimerRef.current) clearTimeout(saveToastTimerRef.current);
-    saveToastTimerRef.current = setTimeout(() => setSaveToast(false), 2000);
+    setSaveToast("saving");
+    Promise.allSettled(promises).then((results) => {
+      const hasError = results.some(
+        (r) => r.status === "rejected" || (r.value && r.value.error)
+      );
+      setSaveToast(hasError ? "error" : "success");
+      saveToastTimerRef.current = setTimeout(() => setSaveToast(null), 2000);
+    });
   };
 
   useEffect(() => {
@@ -2512,8 +2533,14 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
       )}
 
       {saveToast && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg z-50">
-          저장했어요
+        <div
+          className={`fixed bottom-4 left-1/2 -translate-x-1/2 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg z-50 ${
+            saveToast === "error" ? "bg-red-600" : "bg-slate-900"
+          }`}
+        >
+          {saveToast === "saving" && "저장 중..."}
+          {saveToast === "success" && "저장했어요"}
+          {saveToast === "error" && "저장 실패, 인터넷 연결을 확인해주세요"}
         </div>
       )}
     </div>

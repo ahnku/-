@@ -31,6 +31,16 @@ import LoginScreen from "./LoginScreen";
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
+// 탭을 닫는 순간엔 "로그인 토큰을 다시 물어보는" 비동기 과정을 기다릴 시간이 없을 수 있어서,
+// 미리 한 번 받아두고 로그인 상태가 바뀔 때마다 최신 값으로 계속 갱신해둔다.
+let cachedAccessToken = null;
+supabase.auth.getSession().then(({ data }) => {
+  cachedAccessToken = data?.session?.access_token || null;
+});
+supabase.auth.onAuthStateChange((_event, session) => {
+  cachedAccessToken = session?.access_token || null;
+});
+
 function todayKey() {
   const d = new Date();
   const y = d.getFullYear();
@@ -181,7 +191,7 @@ function useCloudState(key, defaultValue, userId) {
   const stateRef = useRef(state);
   const saveTimer = useRef(null);
   const skipNextSaveRef = useRef(false);
-  const lastLocalEditRef = useRef(0);
+  const lastSaveSentRef = useRef(0);
 
   useEffect(() => {
     stateRef.current = state;
@@ -230,10 +240,11 @@ function useCloudState(key, defaultValue, userId) {
           // 타이핑 중 커서가 끝으로 튀는 걸 막기 위해 아무것도 하지 않는다.
           const isSameAsLocal =
             JSON.stringify(row.value) === JSON.stringify(stateRef.current);
-          // 최근(2초 이내) 이 창에서 직접 타이핑한 게 있으면, 저장 신호가 갔다 오는
-          // 사이의 예전 버전으로 화면을 덮어쓰지 않도록 실시간 업데이트를 잠시 무시한다.
-          const recentlyEditedLocally = Date.now() - lastLocalEditRef.current < 2000;
-          if (isSameAsLocal || recentlyEditedLocally) return;
+          // 방금(1.5초 이내) 이 창에서 직접 저장을 "보낸" 직후라면, 그 메아리일 가능성이
+          // 높으니 무시한다. 단순히 "타이핑 중"이라는 이유로는 막지 않아서, 다른 창의
+          // 실제 변경사항은 그동안에도 잘 들어오게 한다.
+          const isLikelyOwnEcho = Date.now() - lastSaveSentRef.current < 1500;
+          if (isSameAsLocal || isLikelyOwnEcho) return;
           skipNextSaveRef.current = true;
           setState(row.value);
         }
@@ -246,8 +257,9 @@ function useCloudState(key, defaultValue, userId) {
     };
   }, [userId, key]);
 
-  const save = () => {
+  const save = (isRetry = false) => {
     if (!userId) return;
+    lastSaveSentRef.current = Date.now();
     supabase
       .from("app_data")
       .upsert(
@@ -260,40 +272,43 @@ function useCloudState(key, defaultValue, userId) {
         { onConflict: "user_id,key" }
       )
       .then(({ error }) => {
-        if (error) console.error("저장 실패:", error);
+        if (error) {
+          console.error("저장 실패:", error);
+          // 네트워크가 잠깐 끊겼다 돌아온 경우를 대비해 한 번만 재시도한다.
+          if (!isRetry) setTimeout(() => save(true), 1500);
+        }
       });
   };
 
   // 탭을 닫거나 새로고침하는 순간엔 일반 요청이 도중에 끊길 수 있어서,
   // 브라우저가 페이지를 닫아도 끝까지 전송을 보장하는 fetch(keepalive)로 대신 보낸다.
+  // 로그인 토큰은 미리 캐싱해둔 값을 써서, 비동기로 다시 물어보는 동안 페이지가
+  // 닫혀버려 요청 자체가 못 나가는 상황을 막는다.
   const flushKeepalive = () => {
-    if (!userId || !SUPABASE_URL) return;
-    supabase.auth.getSession().then(({ data }) => {
-      const token = data?.session?.access_token;
-      if (!token) return;
-      try {
-        fetch(`${SUPABASE_URL}/rest/v1/app_data`, {
-          method: "POST",
-          keepalive: true,
-          headers: {
-            "Content-Type": "application/json",
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${token}`,
-            Prefer: "resolution=merge-duplicates,return=minimal",
+    if (!userId || !SUPABASE_URL || !cachedAccessToken) return;
+    lastSaveSentRef.current = Date.now();
+    try {
+      fetch(`${SUPABASE_URL}/rest/v1/app_data`, {
+        method: "POST",
+        keepalive: true,
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${cachedAccessToken}`,
+          Prefer: "resolution=merge-duplicates,return=minimal",
+        },
+        body: JSON.stringify([
+          {
+            user_id: userId,
+            key,
+            value: stateRef.current,
+            updated_at: new Date().toISOString(),
           },
-          body: JSON.stringify([
-            {
-              user_id: userId,
-              key,
-              value: stateRef.current,
-              updated_at: new Date().toISOString(),
-            },
-          ]),
-        });
-      } catch (e) {
-        console.error("긴급 저장 실패:", e);
-      }
-    });
+        ]),
+      });
+    } catch (e) {
+      console.error("긴급 저장 실패:", e);
+    }
   };
 
   useEffect(() => {
@@ -303,7 +318,6 @@ function useCloudState(key, defaultValue, userId) {
       skipNextSaveRef.current = false;
       return;
     }
-    lastLocalEditRef.current = Date.now();
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(save, 400);
     return () => clearTimeout(saveTimer.current);

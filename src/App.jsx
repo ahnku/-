@@ -307,6 +307,11 @@ function useCloudState(key, defaultValue, userId) {
 
   const save = (isRetry = false) => {
     if (!userId) return Promise.resolve({ error: null });
+    // 오프라인이 확실하면 실패할 게 뻔한 요청을 미리 보내지 않는다.
+    // (연결이 돌아오면 WorkJournalApp의 online 이벤트가 다시 저장을 시도한다)
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      return Promise.resolve({ error: null, skippedOffline: true });
+    }
     lastSaveSentRef.current = Date.now();
     return supabase
       .from("app_data")
@@ -2192,7 +2197,10 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
       const hasError = results.some(
         (r) => r.status === "rejected" || (r.value && r.value.error)
       );
-      setSaveToast(hasError ? "error" : "success");
+      const wasSkippedOffline = results.some((r) => r.value && r.value.skippedOffline);
+      if (hasError) setSaveToast("error");
+      else if (wasSkippedOffline) setSaveToast("offline");
+      else setSaveToast("success");
       saveToastTimerRef.current = setTimeout(() => setSaveToast(null), 2000);
     });
   };
@@ -2206,6 +2214,27 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
     if (refreshToastTimerRef.current) clearTimeout(refreshToastTimerRef.current);
     refreshToastTimerRef.current = setTimeout(() => setRefreshToast(false), 1500);
   };
+
+  // 인터넷 연결 상태를 감지해서 화면에 보여주고, 끊겼다가 돌아오면
+  // 자동으로 최신 내용을 다시 받아오고 밀려있던 저장도 다시 시도한다.
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== "undefined" ? navigator.onLine : true
+  );
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      window.dispatchEvent(new Event("workjournal-force-refresh"));
+      window.dispatchEvent(new Event("workjournal-force-save"));
+    };
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -2390,7 +2419,14 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
         <div className="relative w-full" style={{ maxWidth: `${width}px` }}>
           <div className="px-4 sm:px-6 py-8 sm:py-12">
             <div className="flex items-center justify-between mb-2">
-              <div />
+              <div>
+                {!isOnline && (
+                  <span className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950 px-2 py-1 rounded-full">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    오프라인 — 연결되면 자동으로 저장돼요
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-1">
                 <button
                   onClick={triggerManualSave}
@@ -2611,12 +2647,17 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
       {saveToast && (
         <div
           className={`fixed bottom-4 left-1/2 -translate-x-1/2 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg z-50 ${
-            saveToast === "error" ? "bg-red-600" : "bg-slate-900"
+            saveToast === "error"
+              ? "bg-red-600"
+              : saveToast === "offline"
+              ? "bg-amber-600"
+              : "bg-slate-900"
           }`}
         >
           {saveToast === "saving" && "저장 중..."}
           {saveToast === "success" && "저장했어요"}
           {saveToast === "error" && "저장 실패, 인터넷 연결을 확인해주세요"}
+          {saveToast === "offline" && "오프라인 상태예요. 연결되면 자동으로 저장돼요"}
         </div>
       )}
 

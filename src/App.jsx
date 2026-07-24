@@ -218,7 +218,8 @@ function useCloudState(key, defaultValue, userId) {
     if (!userId) return;
     let cancelled = false;
     setLoaded(false);
-    (async () => {
+
+    const loadWithRetry = async (attempt = 0) => {
       const { data, error } = await supabase
         .from("app_data")
         .select("value")
@@ -226,10 +227,26 @@ function useCloudState(key, defaultValue, userId) {
         .eq("key", key)
         .maybeSingle();
       if (cancelled) return;
-      if (!error && data) setState(data.value);
-      else setState(defaultValue);
+
+      if (error) {
+        console.error("불러오기 실패:", error);
+        // 진짜 네트워크 오류일 땐 "데이터가 없다"고 착각해서 빈 상태로 밀어버리면 안 된다.
+        // (그 직후 자동저장이 그 빈 상태를 서버에 덮어써서 실제 데이터를 지울 수 있었음)
+        // 성공할 때까지 잠시 후 다시 시도하고, loaded는 true로 바꾸지 않는다.
+        if (attempt < 5) {
+          setTimeout(() => loadWithRetry(attempt + 1), 1500 * (attempt + 1));
+        }
+        return;
+      }
+
+      // 여기 도달했다는 건 서버에서 "정상적으로" 응답을 받았다는 뜻이라, data가 없는 건
+      // 진짜로 아직 저장된 게 없는 경우(신규)이므로 이때만 기본값을 쓴다.
+      setState(data ? data.value : defaultValue);
       setLoaded(true);
-    })();
+    };
+
+    loadWithRetry();
+
     return () => {
       cancelled = true;
     };

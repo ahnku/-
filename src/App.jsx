@@ -209,6 +209,7 @@ function useCloudState(key, defaultValue, userId) {
   const skipNextSaveRef = useRef(false);
   const lastSaveSentRef = useRef(0);
   const isMountedRef = useRef(true);
+  const justLoadedRef = useRef(false);
 
   useEffect(() => {
     stateRef.current = state;
@@ -241,6 +242,7 @@ function useCloudState(key, defaultValue, userId) {
 
       // 여기 도달했다는 건 서버에서 "정상적으로" 응답을 받았다는 뜻이라, data가 없는 건
       // 진짜로 아직 저장된 게 없는 경우(신규)이므로 이때만 기본값을 쓴다.
+      justLoadedRef.current = true;
       setState(data ? data.value : defaultValue);
       setLoaded(true);
     };
@@ -388,6 +390,14 @@ function useCloudState(key, defaultValue, userId) {
 
   useEffect(() => {
     if (!loaded || !userId) return;
+    // 방금 서버에서 막 불러온 직후라면(성공/재시도 여부와 상관없이), 절대로
+    // 그 결과를 다시 저장하지 않는다. 저장은 오직 "그 이후에 실제로 상태가
+    // 또 바뀌었을 때"에만 일어나야 한다. 이렇게 하면 불러오기 과정에서
+    // 어떤 이유로든 상태가 잘못돼도, 그게 곧바로 서버에 덮어써지는 경로 자체가 없다.
+    if (justLoadedRef.current) {
+      justLoadedRef.current = false;
+      return;
+    }
     // 방금 다른 창에서 받아온 내용을 그대로 되돌려 보내는 걸 막는다 (무한 루프 방지)
     if (skipNextSaveRef.current) {
       skipNextSaveRef.current = false;

@@ -135,6 +135,7 @@ function useLocalState(key, defaultValue) {
   const [loaded, setLoaded] = useState(false);
   const stateRef = useRef(state);
   const saveTimer = useRef(null);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
     try {
@@ -150,27 +151,28 @@ function useLocalState(key, defaultValue) {
     stateRef.current = state;
   }, [state]);
 
+  const flush = () => {
+    try {
+      localStorage.setItem(key, JSON.stringify(stateRef.current));
+    } catch (e) {
+      console.error("저장 실패:", e);
+    }
+  };
+
   useEffect(() => {
     if (!loaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      try {
-        localStorage.setItem(key, JSON.stringify(state));
-      } catch (e) {
-        console.error("저장 실패:", e);
-      }
-    }, 400);
-    return () => clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(flush, 400);
+    return () => {
+      clearTimeout(saveTimer.current);
+      // 저장 예약이 끝나기 전에 이 화면 자체가 사라지는 거라면(예: 다른 탭으로 전환),
+      // 마지막으로 입력한 내용을 잃어버리지 않도록 지금 바로 저장한다.
+      if (!isMountedRef.current) flush();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, loaded, key]);
 
   useEffect(() => {
-    const flush = () => {
-      try {
-        localStorage.setItem(key, JSON.stringify(stateRef.current));
-      } catch (e) {
-        console.error("저장 실패:", e);
-      }
-    };
     const handleVisibility = () => {
       if (document.visibilityState === "hidden") flush();
     };
@@ -186,6 +188,15 @@ function useLocalState(key, defaultValue) {
     };
   }, [key]);
 
+  // 컴포넌트가 실제로 사라지는 순간을 감지하기 위한 훅. 반드시 위의 디바운스
+  // effect보다 아래(나중)에 선언해야, 마운트 해제 시 이 cleanup이 먼저 실행된다.
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   return [state, setState];
 }
 
@@ -196,6 +207,7 @@ function useCloudState(key, defaultValue, userId) {
   const saveTimer = useRef(null);
   const skipNextSaveRef = useRef(false);
   const lastSaveSentRef = useRef(0);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
     stateRef.current = state;
@@ -329,9 +341,24 @@ function useCloudState(key, defaultValue, userId) {
     }
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(save, 400);
-    return () => clearTimeout(saveTimer.current);
+    return () => {
+      clearTimeout(saveTimer.current);
+      // 저장 예약이 끝나기 전에 이 화면 자체가 사라지는 거라면(예: 다른 탭으로 전환),
+      // 마지막으로 입력한 내용을 잃어버리지 않도록 지금 바로 저장한다.
+      if (!isMountedRef.current) save();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, loaded, userId, key]);
+
+  // 컴포넌트가 실제로 사라지는 순간을 감지하기 위한 훅. 반드시 다른 effect들보다
+  // 아래(나중)에 선언해야, 마운트 해제 시 이 cleanup이 먼저 실행돼서 위의
+  // 디바운스 저장 effect가 "지금은 진짜로 사라지는 중"이라는 걸 알 수 있다.
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const handleForceSave = () => {

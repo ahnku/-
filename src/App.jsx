@@ -22,6 +22,7 @@ import {
   Star,
   Pencil,
   ArrowLeftRight,
+  RefreshCw,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { AuthProvider, useAuth } from "./useAuth";
@@ -270,6 +271,37 @@ function useCloudState(key, defaultValue, userId) {
       });
     return () => {
       supabase.removeChannel(channel);
+    };
+  }, [userId, key]);
+
+  // 오래 안 쓰던 창으로 돌아왔을 때는 실시간 연결(웹소켓)이 끊겨있었을 수 있어서,
+  // 그 사이 놓친 변경사항이 없는지 최신 값을 다시 한번 직접 확인해서 반영한다.
+  useEffect(() => {
+    if (!userId) return;
+    const refetchLatest = async () => {
+      if (document.visibilityState === "hidden") return;
+      const { data, error } = await supabase
+        .from("app_data")
+        .select("value")
+        .eq("user_id", userId)
+        .eq("key", key)
+        .maybeSingle();
+      if (error || !data) return;
+      const isSame = JSON.stringify(data.value) === JSON.stringify(stateRef.current);
+      if (isSame) return;
+      skipNextSaveRef.current = true;
+      setState(data.value);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") refetchLatest();
+    };
+    window.addEventListener("focus", refetchLatest);
+    window.addEventListener("workjournal-force-refresh", refetchLatest);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("focus", refetchLatest);
+      window.removeEventListener("workjournal-force-refresh", refetchLatest);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [userId, key]);
 
@@ -2165,6 +2197,16 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
     });
   };
 
+  const [refreshToast, setRefreshToast] = useState(false);
+  const refreshToastTimerRef = useRef(null);
+
+  const triggerManualRefresh = () => {
+    window.dispatchEvent(new Event("workjournal-force-refresh"));
+    setRefreshToast(true);
+    if (refreshToastTimerRef.current) clearTimeout(refreshToastTimerRef.current);
+    refreshToastTimerRef.current = setTimeout(() => setRefreshToast(false), 1500);
+  };
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       const isSaveShortcut = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s";
@@ -2356,6 +2398,13 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
                   className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
                 >
                   <Save className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={triggerManualRefresh}
+                  title="최신 내용 다시 불러오기"
+                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                >
+                  <RefreshCw className="h-4 w-4" />
                 </button>
                 <button
                   onClick={() => setSearchOpen(true)}
@@ -2568,6 +2617,12 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
           {saveToast === "saving" && "저장 중..."}
           {saveToast === "success" && "저장했어요"}
           {saveToast === "error" && "저장 실패, 인터넷 연결을 확인해주세요"}
+        </div>
+      )}
+
+      {refreshToast && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg z-50">
+          최신 내용으로 불러왔어요
         </div>
       )}
     </div>

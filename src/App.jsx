@@ -201,6 +201,14 @@ function useLocalState(key, defaultValue) {
   return [state, setState];
 }
 
+// 배열이 비었거나(길이 0), 객체에 키가 하나도 없으면 "비어있다"고 본다.
+function isEmptyValue(v) {
+  if (v === null || v === undefined) return true;
+  if (Array.isArray(v)) return v.length === 0;
+  if (typeof v === "object") return Object.keys(v).length === 0;
+  return false;
+}
+
 function useCloudState(key, defaultValue, userId) {
   const [state, setState] = useState(defaultValue);
   const [loaded, setLoaded] = useState(false);
@@ -242,8 +250,16 @@ function useCloudState(key, defaultValue, userId) {
 
       // 여기 도달했다는 건 서버에서 "정상적으로" 응답을 받았다는 뜻이라, data가 없는 건
       // 진짜로 아직 저장된 게 없는 경우(신규)이므로 이때만 기본값을 쓴다.
+      const incoming = data ? data.value : defaultValue;
+      // 지금 화면에 이미 데이터가 있는데, 새로 받아온 게 비어있다면 의심하고 무시한다.
+      // (원인이 무엇이든, "있던 걸 없앤다"는 방향의 변화는 절대 그대로 받아들이지 않는다)
+      if (isEmptyValue(incoming) && !isEmptyValue(stateRef.current)) {
+        console.warn(`[${key}] 서버에서 빈 값이 와서 무시했어요. 현재 화면 데이터를 유지합니다.`);
+        setLoaded(true);
+        return;
+      }
       justLoadedRef.current = true;
-      setState(data ? data.value : defaultValue);
+      setState(incoming);
       setLoaded(true);
     };
 
@@ -281,6 +297,11 @@ function useCloudState(key, defaultValue, userId) {
           // 실제 변경사항은 그동안에도 잘 들어오게 한다.
           const isLikelyOwnEcho = Date.now() - lastSaveSentRef.current < 1500;
           if (isSameAsLocal || isLikelyOwnEcho) return;
+          // 지금 화면에 이미 데이터가 있는데, 실시간으로 들어온 값이 비어있다면 의심하고 무시한다.
+          if (isEmptyValue(row.value) && !isEmptyValue(stateRef.current)) {
+            console.warn(`[${key}] 실시간으로 받은 값이 비어있어서 무시했어요.`);
+            return;
+          }
           skipNextSaveRef.current = true;
           setState(row.value);
         }
@@ -308,6 +329,11 @@ function useCloudState(key, defaultValue, userId) {
       if (error || !data) return;
       const isSame = JSON.stringify(data.value) === JSON.stringify(stateRef.current);
       if (isSame) return;
+      // 지금 화면에 이미 데이터가 있는데, 새로 받아온 게 비어있다면 의심하고 무시한다.
+      if (isEmptyValue(data.value) && !isEmptyValue(stateRef.current)) {
+        console.warn(`[${key}] 새로고침 결과가 비어있어서 무시했어요. 현재 화면 데이터를 유지합니다.`);
+        return;
+      }
       skipNextSaveRef.current = true;
       setState(data.value);
     };

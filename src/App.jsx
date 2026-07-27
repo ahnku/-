@@ -228,7 +228,7 @@ function useCloudState(key, defaultValue, userId) {
     let cancelled = false;
     setLoaded(false);
 
-    const loadWithRetry = async (attempt = 0) => {
+    const loadWithRetry = async (attempt = 0, emptyConfirmCount = 0) => {
       const { data, error } = await supabase
         .from("app_data")
         .select("value")
@@ -243,14 +243,29 @@ function useCloudState(key, defaultValue, userId) {
         // (그 직후 자동저장이 그 빈 상태를 서버에 덮어써서 실제 데이터를 지울 수 있었음)
         // 성공할 때까지 잠시 후 다시 시도하고, loaded는 true로 바꾸지 않는다.
         if (attempt < 5) {
-          setTimeout(() => loadWithRetry(attempt + 1), 1500 * (attempt + 1));
+          setTimeout(() => loadWithRetry(attempt + 1, 0), 1500 * (attempt + 1));
         }
         return;
       }
 
-      // 여기 도달했다는 건 서버에서 "정상적으로" 응답을 받았다는 뜻이라, data가 없는 건
-      // 진짜로 아직 저장된 게 없는 경우(신규)이므로 이때만 기본값을 쓴다.
-      const incoming = data ? data.value : defaultValue;
+      if (!data) {
+        // "이 항목엔 데이터가 없다"는 응답 자체가, VPN을 켜고 끄는 등 네트워크가
+        // 잠깐 흔들리는 순간엔 일시적으로 잘못 온 응답일 수 있다. 페이지를 막 새로
+        // 열어서 아직 비교할 기존 화면 데이터가 없는 상황이라 더 위험하기 때문에,
+        // 곧바로 믿지 않고 짧게 한 번 더 같은 응답이 나오는지 확인한다.
+        if (emptyConfirmCount < 2) {
+          setTimeout(() => loadWithRetry(attempt, emptyConfirmCount + 1), 800);
+          return;
+        }
+        // 두 번 더 확인해도 계속 "없음"이라고 나오면 그때는 진짜 신규 사용자로 본다.
+        justLoadedRef.current = true;
+        setState(defaultValue);
+        setLoaded(true);
+        return;
+      }
+
+      // 여기 도달했다는 건 서버에서 실제 데이터가 있는 행을 정상적으로 받았다는 뜻이다.
+      const incoming = data.value;
       // 지금 화면에 이미 데이터가 있는데, 새로 받아온 게 비어있다면 의심하고 무시한다.
       // (원인이 무엇이든, "있던 걸 없앤다"는 방향의 변화는 절대 그대로 받아들이지 않는다)
       if (isEmptyValue(incoming) && !isEmptyValue(stateRef.current)) {

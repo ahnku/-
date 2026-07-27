@@ -218,6 +218,13 @@ function useCloudState(key, defaultValue, userId) {
   const lastSaveSentRef = useRef(0);
   const isMountedRef = useRef(true);
   const justLoadedRef = useRef(false);
+  // beforeunload 등 이벤트 리스너는 등록 당시의 낡은 loaded 값을 계속 참조할 수 있어서(클로저 문제),
+  // ref로 따로 최신 상태를 추적해서 "아직 제대로 불러오기 전"인지 항상 정확히 판단한다.
+  const loadedRef = useRef(false);
+
+  useEffect(() => {
+    loadedRef.current = loaded;
+  }, [loaded]);
 
   useEffect(() => {
     stateRef.current = state;
@@ -367,6 +374,11 @@ function useCloudState(key, defaultValue, userId) {
 
   const save = (isRetry = false) => {
     if (!userId) return Promise.resolve({ error: null });
+    // 아직 서버에서 실제 데이터를 제대로 불러오기 전이라면(loadedRef가 false),
+    // 지금 상태는 텅 빈 초기값일 수 있으니 그걸 그대로 저장해버리면 안 된다.
+    if (!loadedRef.current) {
+      return Promise.resolve({ error: null, skippedNotLoaded: true });
+    }
     // 오프라인이 확실하면 실패할 게 뻔한 요청을 미리 보내지 않는다.
     // (연결이 돌아오면 WorkJournalApp의 online 이벤트가 다시 저장을 시도한다)
     if (typeof navigator !== "undefined" && navigator.onLine === false) {
@@ -404,6 +416,9 @@ function useCloudState(key, defaultValue, userId) {
   // 닫혀버려 요청 자체가 못 나가는 상황을 막는다.
   const flushKeepalive = () => {
     if (!userId || !SUPABASE_URL || !cachedAccessToken) return;
+    // 아직 불러오기가 끝나기 전(F5를 연타하는 등)이라면, 텅 빈 초기값을
+    // 서버에 그대로 써버릴 수 있으니 아무것도 하지 않는다.
+    if (!loadedRef.current) return;
     lastSaveSentRef.current = Date.now();
     try {
       fetch(`${SUPABASE_URL}/rest/v1/app_data`, {
@@ -2266,8 +2281,12 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
         (r) => r.status === "rejected" || (r.value && r.value.error)
       );
       const wasSkippedOffline = results.some((r) => r.value && r.value.skippedOffline);
+      const wasSkippedNotLoaded = results.some(
+        (r) => r.value && r.value.skippedNotLoaded
+      );
       if (hasError) setSaveToast("error");
       else if (wasSkippedOffline) setSaveToast("offline");
+      else if (wasSkippedNotLoaded) setSaveToast("notloaded");
       else setSaveToast("success");
       saveToastTimerRef.current = setTimeout(() => setSaveToast(null), 2000);
     });
@@ -2717,7 +2736,7 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
           className={`fixed bottom-4 left-1/2 -translate-x-1/2 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg z-50 ${
             saveToast === "error"
               ? "bg-red-600"
-              : saveToast === "offline"
+              : saveToast === "offline" || saveToast === "notloaded"
               ? "bg-amber-600"
               : "bg-slate-900"
           }`}
@@ -2726,6 +2745,7 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
           {saveToast === "success" && "저장했어요"}
           {saveToast === "error" && "저장 실패, 인터넷 연결을 확인해주세요"}
           {saveToast === "offline" && "오프라인 상태예요. 연결되면 자동으로 저장돼요"}
+          {saveToast === "notloaded" && "아직 불러오는 중이에요. 잠시 후 다시 시도해주세요"}
         </div>
       )}
 

@@ -23,6 +23,7 @@ import {
   Pencil,
   ArrowLeftRight,
   RefreshCw,
+  History,
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { AuthProvider, useAuth } from "./useAuth";
@@ -2268,6 +2269,129 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
   const [entries, setEntries] = useCloudState("work-journal-entries", [], userId);
   const [memos, setMemos] = useCloudState("work-journal-memos", [], userId);
 
+  // ---- 정기 백업 (app_data_backups 테이블에 스냅샷 저장) ----
+  // 지금까지 만든 안전장치와는 별개로, 만약을 대비한 추가 안전망이다.
+  const BACKUP_RETENTION = 30;
+  const [backupList, setBackupList] = useState([]);
+  const [backupPanelOpen, setBackupPanelOpen] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [confirmRestoreId, setConfirmRestoreId] = useState(null);
+  const [backupToast, setBackupToast] = useState(null); // null | "backing-up" | "done" | "error"
+  const backupToastTimerRef = useRef(null);
+
+  const createBackupSnapshot = async () => {
+    if (!userId) return { error: "no-user" };
+    try {
+      const { data: rows, error } = await supabase
+        .from("app_data")
+        .select("key, value")
+        .eq("user_id", userId)
+        .in("key", CLOUD_KEYS);
+      if (error) return { error };
+      const snapshot = {};
+      (rows || []).forEach((r) => {
+        snapshot[r.key] = r.value;
+      });
+      const { error: insertError } = await supabase
+        .from("app_data_backups")
+        .insert({ user_id: userId, snapshot });
+      if (insertError) return { error: insertError };
+
+      // 오래된 백업은 최근 30개만 남기고 정리한다.
+      const { data: allBackups } = await supabase
+        .from("app_data_backups")
+        .select("id, created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
+      if (allBackups && allBackups.length > BACKUP_RETENTION) {
+        const idsToDelete = allBackups.slice(BACKUP_RETENTION).map((b) => b.id);
+        await supabase.from("app_data_backups").delete().in("id", idsToDelete);
+      }
+      return { error: null };
+    } catch (e) {
+      return { error: e };
+    }
+  };
+
+  // 하루에 한 번, 자동으로 백업 스냅샷을 만들어둔다.
+  useEffect(() => {
+    if (!userId) return;
+    const lastBackupKey = `work-journal-last-backup-${userId}`;
+    const today = todayKey();
+    let lastBackupDate = null;
+    try {
+      lastBackupDate = localStorage.getItem(lastBackupKey);
+    } catch (e) {
+      // 무시
+    }
+    if (lastBackupDate === today) return;
+    createBackupSnapshot().then(({ error }) => {
+      if (!error) {
+        try {
+          localStorage.setItem(lastBackupKey, today);
+        } catch (e) {
+          // 무시
+        }
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  const triggerManualBackup = async () => {
+    setSettingsOpen(false);
+    setBackupToast("backing-up");
+    const { error } = await createBackupSnapshot();
+    setBackupToast(error ? "error" : "done");
+    if (backupToastTimerRef.current) clearTimeout(backupToastTimerRef.current);
+    backupToastTimerRef.current = setTimeout(() => setBackupToast(null), 2000);
+  };
+
+  const openBackupPanel = async () => {
+    setBackupPanelOpen(true);
+    setSettingsOpen(false);
+    setBackupBusy(true);
+    const { data } = await supabase
+      .from("app_data_backups")
+      .select("id, created_at")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(30);
+    setBackupList(data || []);
+    setBackupBusy(false);
+  };
+
+  const restoreBackup = async (id) => {
+    setBackupBusy(true);
+    const { data, error } = await supabase
+      .from("app_data_backups")
+      .select("snapshot")
+      .eq("id", id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error || !data) {
+      setBackupBusy(false);
+      alert("복원에 실패했어요.");
+      return;
+    }
+    const rows = Object.entries(data.snapshot).map(([k, v]) => ({
+      user_id: userId,
+      key: k,
+      value: v,
+      updated_at: new Date().toISOString(),
+    }));
+    const { error: upsertError } = await supabase
+      .from("app_data")
+      .upsert(rows, { onConflict: "user_id,key" });
+    setBackupBusy(false);
+    setConfirmRestoreId(null);
+    if (upsertError) {
+      alert("복원에 실패했어요.");
+      return;
+    }
+    alert("복원했어요. 페이지를 새로고침할게요.");
+    window.location.reload();
+  };
+
   const triggerManualSave = () => {
     pendingForceSaves.length = 0;
     window.dispatchEvent(new Event("workjournal-force-save"));
@@ -2514,38 +2638,32 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={triggerManualSave}
-                  title="저장 (Ctrl+S)"
-                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
-                >
-                  <Save className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={triggerManualRefresh}
-                  title="최신 내용 다시 불러오기"
-                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={() => setSearchOpen(true)}
-                  title="검색"
-                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
-                >
-                  <Search className="h-4 w-4" />
-                </button>
-                <div className="relative">
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-1">
                   <button
-                    onClick={() => setSettingsOpen((v) => !v)}
-                    title="설정"
+                    onClick={triggerManualRefresh}
+                    title="최신 내용 다시 불러오기"
                     className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
                   >
-                    <Settings className="h-4 w-4" />
+                    <RefreshCw className="h-4 w-4" />
                   </button>
-                  {settingsOpen && (
-                    <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg py-1 z-50">
+                  <button
+                    onClick={() => setSearchOpen(true)}
+                    title="검색"
+                    className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                  >
+                    <Search className="h-4 w-4" />
+                  </button>
+                  <div className="relative">
+                    <button
+                      onClick={() => setSettingsOpen((v) => !v)}
+                      title="설정"
+                      className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                    >
+                      <Settings className="h-4 w-4" />
+                    </button>
+                    {settingsOpen && (
+                      <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg py-1 z-50">
                       <div className="px-3 py-2 text-xs text-slate-400 dark:text-slate-500 truncate border-b border-slate-100 dark:border-slate-700 mb-1">
                         {userEmail}
                       </div>
@@ -2600,6 +2718,14 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
                       />
                       <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
                       <button
+                        onClick={openBackupPanel}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                        백업에서 복원
+                      </button>
+                      <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
+                      <button
                         onClick={onSignOut}
                         className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-950"
                       >
@@ -2610,6 +2736,23 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
                   )}
                 </div>
               </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={triggerManualSave}
+                  title="저장 (Ctrl+S)"
+                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                >
+                  <Save className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={triggerManualBackup}
+                  title="지금 백업하기"
+                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                >
+                  <History className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
             </div>
 
             <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
@@ -2752,6 +2895,85 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
       {refreshToast && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg z-50">
           최신 내용으로 불러왔어요
+        </div>
+      )}
+
+      {backupPanelOpen && (
+        <div
+          className="fixed inset-0 bg-black/30 dark:bg-black/50 flex items-start justify-center pt-24 px-4 z-50"
+          onClick={() => setBackupPanelOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-slate-800 rounded-xl shadow-xl w-full max-w-md overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+              <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                백업에서 복원
+              </span>
+              <button
+                onClick={() => setBackupPanelOpen(false)}
+                className="text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-200"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="max-h-96 overflow-y-auto">
+              {backupBusy && (
+                <p className="text-sm text-slate-400 dark:text-slate-500 px-4 py-6 text-center">
+                  불러오는 중...
+                </p>
+              )}
+              {!backupBusy && backupList.length === 0 && (
+                <p className="text-sm text-slate-400 dark:text-slate-500 px-4 py-6 text-center">
+                  아직 백업이 없어요. 하루에 한 번 자동으로 만들어지고, "지금 백업하기"로 바로
+                  만들 수도 있어요.
+                </p>
+              )}
+              {!backupBusy &&
+                backupList.map((b) => (
+                  <div
+                    key={b.id}
+                    className="flex items-center justify-between px-4 py-2.5 border-b border-slate-100 dark:border-slate-700 last:border-b-0"
+                  >
+                    <span className="text-sm text-slate-700 dark:text-slate-200">
+                      {new Date(b.created_at).toLocaleString("ko-KR", {
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                    <button
+                      onClick={() => setConfirmRestoreId(b.id)}
+                      className="text-xs font-medium text-indigo-500 hover:text-indigo-600 px-2 py-1"
+                    >
+                      이 시점으로 복원
+                    </button>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={confirmRestoreId !== null}
+        message="이 시점의 백업으로 복원하시겠어요? 지금 있는 최신 내용은 이 백업 내용으로 덮어써져요."
+        onCancel={() => setConfirmRestoreId(null)}
+        onConfirm={() => restoreBackup(confirmRestoreId)}
+      />
+
+      {backupToast && (
+        <div
+          className={`fixed bottom-4 left-1/2 -translate-x-1/2 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg z-50 ${
+            backupToast === "error" ? "bg-red-600" : "bg-slate-900"
+          }`}
+        >
+          {backupToast === "backing-up" && "백업하는 중..."}
+          {backupToast === "done" && "백업했어요"}
+          {backupToast === "error" && "백업 실패, 다시 시도해주세요"}
         </div>
       )}
     </div>

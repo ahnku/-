@@ -2369,11 +2369,20 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
       .eq("user_id", userId)
       .maybeSingle();
     if (error || !data) {
+      console.error("백업 조회 실패:", error);
       setBackupBusy(false);
-      alert("복원에 실패했어요.");
+      alert(`복원에 실패했어요.\n${error ? error.message : "백업을 찾을 수 없어요."}`);
       return;
     }
-    const rows = Object.entries(data.snapshot).map(([k, v]) => ({
+
+    const entriesToRestore = Object.entries(data.snapshot || {});
+    if (entriesToRestore.length === 0) {
+      setBackupBusy(false);
+      alert("이 백업엔 복원할 내용이 없어요 (비어있는 백업이에요).");
+      return;
+    }
+
+    const rows = entriesToRestore.map(([k, v]) => ({
       user_id: userId,
       key: k,
       value: v,
@@ -2382,12 +2391,50 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
     const { error: upsertError } = await supabase
       .from("app_data")
       .upsert(rows, { onConflict: "user_id,key" });
-    setBackupBusy(false);
-    setConfirmRestoreId(null);
     if (upsertError) {
-      alert("복원에 실패했어요.");
+      console.error("복원 저장 실패:", upsertError);
+      setBackupBusy(false);
+      alert(`복원에 실패했어요.\n${upsertError.message}`);
       return;
     }
+
+    // 실제로 서버에 반영됐는지 다시 읽어서 확인한다.
+    const { data: verifyRows, error: verifyError } = await supabase
+      .from("app_data")
+      .select("key, value")
+      .eq("user_id", userId)
+      .in(
+        "key",
+        rows.map((r) => r.key)
+      );
+    setBackupBusy(false);
+    setConfirmRestoreId(null);
+
+    if (verifyError) {
+      console.error("복원 확인 실패:", verifyError);
+      alert("복원 요청은 보냈지만, 반영됐는지 확인하지 못했어요. 새로고침해서 확인해주세요.");
+      window.location.reload();
+      return;
+    }
+
+    const mismatched = rows.filter((r) => {
+      const found = (verifyRows || []).find((v) => v.key === r.key);
+      return !found || JSON.stringify(found.value) !== JSON.stringify(r.value);
+    });
+
+    if (mismatched.length > 0) {
+      console.error(
+        "복원 확인 결과 불일치:",
+        mismatched.map((m) => m.key)
+      );
+      alert(
+        `일부 항목이 정확히 반영되지 않았어요 (${mismatched
+          .map((m) => m.key)
+          .join(", ")}). 다시 시도해주세요.`
+      );
+      return;
+    }
+
     alert("복원했어요. 페이지를 새로고침할게요.");
     window.location.reload();
   };

@@ -2638,32 +2638,38 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
                   </span>
                 )}
               </div>
-              <div className="flex flex-col items-end gap-1">
-                <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={triggerManualSave}
+                  title="저장 (Ctrl+S)"
+                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                >
+                  <Save className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={triggerManualRefresh}
+                  title="최신 내용 다시 불러오기"
+                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={() => setSearchOpen(true)}
+                  title="검색"
+                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                >
+                  <Search className="h-4 w-4" />
+                </button>
+                <div className="relative">
                   <button
-                    onClick={triggerManualRefresh}
-                    title="최신 내용 다시 불러오기"
+                    onClick={() => setSettingsOpen((v) => !v)}
+                    title="설정"
                     className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
                   >
-                    <RefreshCw className="h-4 w-4" />
+                    <Settings className="h-4 w-4" />
                   </button>
-                  <button
-                    onClick={() => setSearchOpen(true)}
-                    title="검색"
-                    className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
-                  >
-                    <Search className="h-4 w-4" />
-                  </button>
-                  <div className="relative">
-                    <button
-                      onClick={() => setSettingsOpen((v) => !v)}
-                      title="설정"
-                      className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
-                    >
-                      <Settings className="h-4 w-4" />
-                    </button>
-                    {settingsOpen && (
-                      <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg py-1 z-50">
+                  {settingsOpen && (
+                    <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-lg py-1 z-50">
                       <div className="px-3 py-2 text-xs text-slate-400 dark:text-slate-500 truncate border-b border-slate-100 dark:border-slate-700 mb-1">
                         {userEmail}
                       </div>
@@ -2718,6 +2724,13 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
                       />
                       <div className="my-1 border-t border-slate-100 dark:border-slate-700" />
                       <button
+                        onClick={triggerManualBackup}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+                      >
+                        <History className="h-4 w-4" />
+                        지금 백업하기
+                      </button>
+                      <button
                         onClick={openBackupPanel}
                         className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
                       >
@@ -2736,23 +2749,6 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={triggerManualSave}
-                  title="저장 (Ctrl+S)"
-                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
-                >
-                  <Save className="h-4 w-4" />
-                </button>
-                <button
-                  onClick={triggerManualBackup}
-                  title="지금 백업하기"
-                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
-                >
-                  <History className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
             </div>
 
             <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">

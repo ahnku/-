@@ -47,6 +47,11 @@ supabase.auth.onAuthStateChange((_event, session) => {
 // 전부 끝난 뒤에야 "저장했어요"를 보여주기 위한 임시 저장소.
 const pendingForceSaves = [];
 
+// 백업 복원처럼, 서버 데이터를 직접 바꾼 뒤 의도적으로 새로고침할 때는
+// 화면에 남아있는 "복원 전" 메모리 상태가 새로고침 도중 다시 저장되어
+// 방금 복원한 내용을 덮어써버리는 일이 없도록, 모든 저장을 잠시 막아둔다.
+let suppressAllSaves = false;
+
 function todayKey() {
   const d = new Date();
   const y = d.getFullYear();
@@ -375,6 +380,11 @@ function useCloudState(key, defaultValue, userId) {
 
   const save = (isRetry = false) => {
     if (!userId) return Promise.resolve({ error: null });
+    // 백업 복원 등으로 서버 데이터를 직접 바꾼 직후라면, 화면에 남아있는
+    // (아직 갱신 안 된) 예전 메모리 상태를 다시 저장해서 덮어쓰면 안 된다.
+    if (suppressAllSaves) {
+      return Promise.resolve({ error: null, skippedSuppressed: true });
+    }
     // 아직 서버에서 실제 데이터를 제대로 불러오기 전이라면(loadedRef가 false),
     // 지금 상태는 텅 빈 초기값일 수 있으니 그걸 그대로 저장해버리면 안 된다.
     if (!loadedRef.current) {
@@ -417,6 +427,9 @@ function useCloudState(key, defaultValue, userId) {
   // 닫혀버려 요청 자체가 못 나가는 상황을 막는다.
   const flushKeepalive = () => {
     if (!userId || !SUPABASE_URL || !cachedAccessToken) return;
+    // 백업 복원 등으로 서버 데이터를 직접 바꾼 직후라면, 화면에 남아있는
+    // (아직 갱신 안 된) 예전 메모리 상태를 다시 저장해서 덮어쓰면 안 된다.
+    if (suppressAllSaves) return;
     // 아직 불러오기가 끝나기 전(F5를 연타하는 등)이라면, 텅 빈 초기값을
     // 서버에 그대로 써버릴 수 있으니 아무것도 하지 않는다.
     if (!loadedRef.current) return;
@@ -2413,6 +2426,7 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
     if (verifyError) {
       console.error("복원 확인 실패:", verifyError);
       alert("복원 요청은 보냈지만, 반영됐는지 확인하지 못했어요. 새로고침해서 확인해주세요.");
+      suppressAllSaves = true;
       window.location.reload();
       return;
     }
@@ -2436,6 +2450,9 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
     }
 
     alert("복원했어요. 페이지를 새로고침할게요.");
+    // 방금 서버 데이터를 직접 바꿨으니, 화면에 남아있는 예전 메모리 상태가
+    // 새로고침 도중 다시 저장되어 방금 복원한 내용을 덮어쓰지 않도록 막는다.
+    suppressAllSaves = true;
     window.location.reload();
   };
 
@@ -2584,6 +2601,9 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
           .upsert(rowsToUpsert, { onConflict: "user_id,key" });
         if (error) throw error;
         alert("데이터를 불러왔어요. 페이지를 새로고침할게요.");
+        // 방금 서버 데이터를 직접 바꿨으니, 화면에 남아있는 예전 메모리 상태가
+        // 새로고침 도중 다시 저장되어 방금 불러온 내용을 덮어쓰지 않도록 막는다.
+        suppressAllSaves = true;
         window.location.reload();
       } catch (err) {
         alert("가져오기에 실패했어요: " + (err.message || "알 수 없는 오류"));

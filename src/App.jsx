@@ -2261,6 +2261,15 @@ const DEFAULT_TABS = [
   { id: "converter", label: "단위변환" },
 ];
 
+const TAB_ICONS = {
+  journal: Pencil,
+  memo: Plus,
+  calendar: Calendar,
+  favorites: Star,
+  phonebook: Phone,
+  converter: ArrowLeftRight,
+};
+
 const MIN_WIDTH = 1040;
 const MAX_WIDTH = Math.round(MIN_WIDTH * 1.5);
 
@@ -2693,10 +2702,10 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
 
   return (
     <div className={darkMode ? "dark" : ""}>
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex justify-center">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex justify-center pb-[calc(5rem+env(safe-area-inset-bottom))] sm:pb-0">
         <div className="relative w-full" style={{ maxWidth: `${width}px` }}>
-          <div className="px-4 sm:px-6 py-8 sm:py-12">
-            <div className="flex items-center justify-between mb-2">
+          <div className="px-3 sm:px-6 py-3 sm:py-12">
+            <div className="sticky top-0 z-40 -mx-3 px-3 py-2 sm:static sm:mx-0 sm:px-0 sm:py-0 flex items-center justify-between mb-2 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur sm:bg-transparent sm:dark:bg-transparent sm:backdrop-blur-none">
               <div>
                 {!isOnline && (
                   <span className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950 px-2 py-1 rounded-full">
@@ -2709,21 +2718,24 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
                 <button
                   onClick={triggerManualSave}
                   title="저장 (Ctrl+S)"
-                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                  className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 flex items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200"
+                  aria-label="저장"
                 >
                   <Save className="h-4 w-4" />
                 </button>
                 <button
                   onClick={triggerManualRefresh}
                   title="최신 내용 다시 불러오기"
-                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                  className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 flex items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200"
+                  aria-label="새로고침"
                 >
                   <RefreshCw className="h-4 w-4" />
                 </button>
                 <button
                   onClick={() => setSearchOpen(true)}
                   title="검색"
-                  className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                  className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 flex items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200"
+                  aria-label="검색"
                 >
                   <Search className="h-4 w-4" />
                 </button>
@@ -2731,7 +2743,8 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
                   <button
                     onClick={() => setSettingsOpen((v) => !v)}
                     title="설정"
-                    className="p-1.5 text-slate-400 dark:text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 dark:hover:text-slate-200"
+                    className="min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 p-2.5 sm:p-1.5 flex items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200"
+                    aria-label="설정"
                   >
                     <Settings className="h-4 w-4" />
                   </button>
@@ -2818,7 +2831,7 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
               </div>
             </div>
 
-            <div className="flex items-center gap-1 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
+            <div className="hidden sm:flex items-center gap-1 border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
             {tabs.map((tab, index) => (
               <div
                 key={tab.id}
@@ -2866,6 +2879,34 @@ function WorkJournalApp({ userId, userEmail, onSignOut }) {
           </div>
         </div>
       </div>
+
+      <nav
+        className="sm:hidden fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 backdrop-blur px-1 pt-1.5 pb-[calc(0.375rem+env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(15,23,42,0.08)]"
+        aria-label="주요 메뉴"
+      >
+        <div className="grid grid-cols-6 gap-0.5">
+          {tabs.map((tab) => {
+            const TabIcon = TAB_ICONS[tab.id] || Pencil;
+            const active = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                aria-current={active ? "page" : undefined}
+                className={`min-h-14 min-w-0 flex flex-col items-center justify-center gap-1 rounded-xl px-0.5 transition-colors ${
+                  active
+                    ? "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/70 dark:text-indigo-300"
+                    : "text-slate-500 dark:text-slate-400 active:bg-slate-100 dark:active:bg-slate-700"
+                }`}
+              >
+                <TabIcon className="h-5 w-5" strokeWidth={active ? 2.4 : 1.8} />
+                <span className="w-full truncate text-[10px] font-medium leading-none">{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
 
       {searchOpen && (
         <div
